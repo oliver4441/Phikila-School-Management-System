@@ -4,15 +4,19 @@ import { Alert } from '../components/Alert'
 import { PasswordField } from '../components/Field'
 import { Spinner } from '../components/States'
 import { useAuth } from '../lib/auth'
-import { Link, useNavigate } from '../lib/router'
+import { Link, useNavigate, useSearchParams } from '../lib/router'
 import { assessPassword, MINIMUM_PASSWORD_LENGTH } from '../lib/password'
-import { supabase } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 
 export function ResetPasswordPage() {
-  const { session, initialising, updatePassword } = useAuth()
+  const { updatePassword } = useAuth()
   const navigate = useNavigate()
+  const params = useSearchParams()
   const { notify } = useToast()
+
+  const mode = params.get('mode')
+  const oobCode = params.get('oobCode')
+  const linkValid = mode === 'resetPassword' && Boolean(oobCode)
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -48,26 +52,14 @@ export function ResetPasswordPage() {
       return
     }
 
-    // Force a fresh sign-in with the new password.
-    await supabase?.auth.signOut()
     setSubmitting(false)
     notify('Password updated. Sign in with your new password.', 'success')
     navigate('/login?notice=password-updated', { replace: true })
   }
 
-  if (initialising) {
-    return (
-      <AuthLayout title="Choose a new password" subtitle="Checking your reset link…">
-        <div className="form" aria-busy="true">
-          <Spinner label="Checking your reset link" />
-        </div>
-      </AuthLayout>
-    )
-  }
-
-  // Supabase exchanges the emailed link for a temporary session. No session
-  // means the link is missing, already used, or expired.
-  if (!session) {
+  // Firebase reset links carry the code in the URL; no session is created.
+  // A link without the expected code is missing, already used, or expired.
+  if (!linkValid) {
     return (
       <AuthLayout
         title="Reset link not valid"

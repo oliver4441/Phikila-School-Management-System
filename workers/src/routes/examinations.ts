@@ -1,55 +1,59 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow, updateRowById, deleteRowById } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const examinationsRoutes = new Hono()
+export const examinationsRoutes = new Hono<{ Bindings: Bindings }>()
 
 examinationsRoutes.get('/', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('examinations').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from examinations order by created_at desc`
+  return c.json(rows)
 })
 
 examinationsRoutes.post('/', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('examinations').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'examinations', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 examinationsRoutes.get('/:examId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const client = db()
+  const db = createSql(c.env)
   const examId = c.req.param('examId')
-  const { data } = await client.from('examinations').select('*').eq('id', examId).maybeSingle()
-  if (!data) return c.json({ detail: 'Examination not found.' }, 404)
-  const { data: subjects } = await client.from('exam_subjects').select('*').eq('exam_id', examId)
-  const { data: entries } = await client.from('exam_entries').select('*').eq('exam_id', examId)
-  return c.json({ ...data, subjects: subjects ?? [], entries: entries ?? [] })
+  const exam = (await db`select * from examinations where id = ${examId} limit 1`)[0]
+  if (!exam) return c.json({ detail: 'Examination not found.' }, 404)
+  const subjects = await db`select * from exam_subjects where examination_id = ${examId}`
+  const entries = await db`
+    select e.* from exam_entries e
+    join exam_subjects s on s.id = e.exam_subject_id
+    where s.examination_id = ${examId}
+  `
+  return c.json({ ...exam, subjects, entries })
 })
 
 examinationsRoutes.patch('/:examId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('examinations')
-    .update(body)
-    .eq('id', c.req.param('examId'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const db = createSql(c.env)
+  const updated = await updateRowById(db, 'examinations', c.req.param('examId'), body)
+  return c.json(updated)
 })
 
 examinationsRoutes.delete('/:examId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  await db().from('examinations').delete().eq('id', c.req.param('examId'))
+  await deleteRowById(createSql(c.env), 'examinations', c.req.param('examId'))
   return c.body(null, 204)
 })

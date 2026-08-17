@@ -1,109 +1,113 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow, updateRowById, deleteRowById } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const inventoryRoutes = new Hono()
+export const inventoryRoutes = new Hono<{ Bindings: Bindings }>()
 
 inventoryRoutes.get('/items', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('inventory_items').select('*').order('name')
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from inventory_items order by name`
+  return c.json(rows)
 })
 
 inventoryRoutes.get('/items/stats', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('inventory_items').select('quantity, low_stock_threshold, unit_price')
+  const rows = await createSql(c.env)`select quantity, reorder_level, unit_cost from inventory_items`
   let totalValue = 0
   let lowStock = 0
   let totalUnits = 0
-  for (const item of data ?? []) {
-    totalUnits += item.quantity ?? 0
-    totalValue += (item.quantity ?? 0) * (item.unit_price ?? 0)
-    if ((item.quantity ?? 0) <= (item.low_stock_threshold ?? 0)) lowStock += 1
+  for (const item of rows) {
+    const quantity = Number(item.quantity ?? 0)
+    totalUnits += quantity
+    totalValue += quantity * Number(item.unit_cost ?? 0)
+    if (quantity <= Number(item.reorder_level ?? 0)) lowStock += 1
   }
-  return c.json({ total_items: data?.length ?? 0, total_units: totalUnits, total_value: totalValue, low_stock: lowStock })
+  return c.json({ total_items: rows.length, total_units: totalUnits, total_value: totalValue, low_stock: lowStock })
 })
 
 inventoryRoutes.post('/items', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
-  const { data, error: insertError } = await client.from('inventory_items').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  if (body.quantity) {
-    await client.from('inventory_movements').insert({
-      item_id: data.id,
-      quantity: body.quantity,
-      movement_type: 'inbound',
-      note: 'Initial stock',
+  const db = createSql(c.env)
+  let item: Record<string, unknown>
+  try {
+    item = await insertRow(db, 'inventory_items', {
+      name: body.name,
+      sku: body.sku ?? null,
+      category: body.category ?? 'General',
+      unit: body.unit ?? null,
+      location: body.location ?? null,
+      supplier: body.supplier ?? null,
+      status: body.status ?? 'In Stock',
+      quantity: Number(body.quantity ?? 0),
+      reorder_level: Number(body.low_stock_threshold ?? body.reorder_level ?? 0),
+      unit_cost: Number(body.unit_price ?? body.unit_cost ?? 0),
     })
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
   }
-  return c.json(data, 201)
+  if (Number(body.quantity ?? 0) > 0) {
+    await db`insert into inventory_movements (item_id, movement_type, quantity, reason) values (${item.id}, 'receipt', ${Number(body.quantity)}, 'Initial stock')`
+  }
+  return c.json(item, 201)
 })
 
 inventoryRoutes.get('/items/:itemId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const client = db()
+  const db = createSql(c.env)
   const itemId = c.req.param('itemId')
-  const { data } = await client.from('inventory_items').select('*').eq('id', itemId).maybeSingle()
-  if (!data) return c.json({ detail: 'Item not found.' }, 404)
-  const { data: movements } = await client.from('inventory_movements').select('*').eq('item_id', itemId).order('created_at', { ascending: false })
-  return c.json({ ...data, movements: movements ?? [] })
+  const item = (await db`select * from inventory_items where id = ${itemId} limit 1`)[0]
+  if (!item) return c.json({ detail: 'Item not found.' }, 404)
+  const movements = await db`select * from inventory_movements where item_id = ${itemId} order by performed_at desc`
+  return c.json({ ...item, movements })
 })
 
 inventoryRoutes.patch('/items/:itemId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('inventory_items')
-    .update(body)
-    .eq('id', c.req.param('itemId'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const data: Record<string, unknown> = { ...body }
+  if (body.low_stock_threshold !== undefined) data.reorder_level = Number(body.low_stock_threshold)
+  if (body.unit_price !== undefined) data.unit_cost = Number(body.unit_price)
+  delete data.low_stock_threshold
+  delete data.unit_price
+  const updated = await updateRowById(createSql(c.env), 'inventory_items', c.req.param('itemId'), data)
+  return c.json(updated)
 })
 
 inventoryRoutes.delete('/items/:itemId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  await db().from('inventory_items').delete().eq('id', c.req.param('itemId'))
+  await deleteRowById(createSql(c.env), 'inventory_items', c.req.param('itemId'))
   return c.body(null, 204)
 })
 
-/** Adjust stock and record a movement. */
 inventoryRoutes.post('/items/:itemId/movements', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
+  const db = createSql(c.env)
   const itemId = c.req.param('itemId')
   const quantity = Number(body.quantity ?? 0)
   const movementType = body.movement_type === 'outbound' ? -1 : 1
   const delta = quantity * movementType
 
-  const { data: item } = await client.from('inventory_items').select('quantity').eq('id', itemId).maybeSingle()
+  const item = (await db`select quantity from inventory_items where id = ${itemId} limit 1`)[0]
   if (!item) return c.json({ detail: 'Item not found.' }, 404)
-  const newQuantity = Math.max(0, (item.quantity ?? 0) + delta)
+  const newQuantity = Math.max(0, Number(item.quantity ?? 0) + delta)
 
-  const { data: movement, error: movementError } = await client
-    .from('inventory_movements')
-    .insert({
-      item_id: itemId,
-      quantity,
-      movement_type: body.movement_type ?? 'inbound',
-      note: body.note ?? null,
-    })
-    .select()
-    .single()
-  if (movementError) return jsonError(c, movementError.message, 400)
-
-  const { data: updated } = await client.from('inventory_items').update({ quantity: newQuantity }).eq('id', itemId).select().single()
-  return c.json({ movement, item: updated }, 201)
+  const movementRows = await db`
+    insert into inventory_movements (item_id, movement_type, quantity, reason)
+    values (${itemId}, ${body.movement_type === 'outbound' ? 'issue' : 'receipt'}, ${quantity}, ${body.note ?? body.reason ?? null})
+    returning *
+  `
+  const updatedRows = await db`update inventory_items set quantity = ${newQuantity}, updated_at = now() where id = ${itemId} returning *`
+  return c.json({ movement: movementRows[0], item: updatedRows[0] }, 201)
 })

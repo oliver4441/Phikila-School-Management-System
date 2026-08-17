@@ -1,0 +1,4 @@
+# Local development only. Copy to .dev.vars and fill in real values.
+# These are never committed. Production uses `wrangler secret put` instead.
+DATABASE_URL=postgresql://USER:PASSWORD@HOST.neon.tech/neondb
+JWT_SECRET=replace-me

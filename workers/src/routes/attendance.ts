@@ -1,46 +1,47 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const attendanceRoutes = new Hono()
+export const attendanceRoutes = new Hono<{ Bindings: Bindings }>()
 
 attendanceRoutes.get('/classes', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('attendance_sessions').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from attendance_sessions order by created_at desc`
+  return c.json(rows)
 })
 
 attendanceRoutes.get('/sessions', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('attendance_sessions').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from attendance_sessions order by created_at desc`
+  return c.json(rows)
 })
 
 attendanceRoutes.post('/sessions', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('attendance_sessions').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'attendance_sessions', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 attendanceRoutes.get('/sessions/:sessionId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const client = db()
+  const db = createSql(c.env)
   const sessionId = c.req.param('sessionId')
-  const { data: session } = await client
-    .from('attendance_sessions')
-    .select('*')
-    .eq('id', sessionId)
-    .maybeSingle()
+  const session = (await db`select * from attendance_sessions where id = ${sessionId} limit 1`)[0]
   if (!session) return c.json({ detail: 'Session not found.' }, 404)
-  const { data: records } = await client.from('attendance_records').select('*').eq('session_id', sessionId)
-  return c.json({ ...session, records: records ?? [] })
+  const records = await db`select * from attendance_records where session_id = ${sessionId}`
+  return c.json({ ...session, records })
 })
 
 attendanceRoutes.patch('/sessions/:sessionId/records', async (c) => {
@@ -48,13 +49,17 @@ attendanceRoutes.patch('/sessions/:sessionId/records', async (c) => {
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
   const records = Array.isArray(body.records) ? body.records : []
-  const client = db()
+  const db = createSql(c.env)
   const sessionId = c.req.param('sessionId')
-  for (const record of records) {
+  for (const record of records as Record<string, unknown>[]) {
     if (record.id) {
-      await client.from('attendance_records').update(record).eq('id', record.id)
+      await db`update attendance_records set status = ${record.status ?? 'present'}, remark = ${record.remark ?? null} where id = ${record.id}`
     } else {
-      await client.from('attendance_records').insert({ ...record, session_id: sessionId })
+      await db`
+        insert into attendance_records (session_id, student_id, status, remark)
+        values (${sessionId}, ${record.student_id}, ${record.status ?? 'present'}, ${record.remark ?? null})
+        on conflict (session_id, student_id) do update set status = excluded.status, remark = excluded.remark
+      `
     }
   }
   return c.json({ ok: true })
@@ -63,10 +68,6 @@ attendanceRoutes.patch('/sessions/:sessionId/records', async (c) => {
 attendanceRoutes.get('/students/:studentId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db()
-    .from('attendance_records')
-    .select('*')
-    .eq('student_id', c.req.param('studentId'))
-    .order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from attendance_records where student_id = ${c.req.param('studentId')} order by created_at desc`
+  return c.json(rows)
 })

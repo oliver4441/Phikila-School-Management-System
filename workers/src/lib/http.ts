@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
 
-type Env = {
-  Bindings: Record<string, unknown>
+type Env<B> = {
+  Bindings: B
 }
 
 /** Base Hono app with CORS for the Vercel-hosted frontend. */
-export function createApp(): Hono<Env> {
-  const app = new Hono<Env>()
+export function createApp<B extends object = Record<string, unknown>>(): Hono<Env<B>> {
+  const app = new Hono<Env<B>>()
   app.use('*', async (c, next) => {
     c.res.headers.set('Access-Control-Allow-Origin', '*')
     c.res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS')

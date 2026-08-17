@@ -1,40 +1,105 @@
 # AGENTS.md
 
-FastAPI backend for the Phikila School Management System (React frontend lives in the sibling `frontend/` dir). Modular architecture under `app/modules/<name>/` — each module has `models.py`, `schemas.py`, `router.py`, plus optional `services.py`/`repository.py`.
+Phikila School Management System. The production stack is:
+
+- **Backend:** Cloudflare Worker (`workers/`) — Hono + `@neondatabase/serverless`
+  against Neon Postgres. Deployed at `https://phikila-backend.kipkiruigideon890.workers.dev`.
+- **Frontend:** React + Vite (`frontend/`), deployed to Vercel
+  (`https://phikila-school-system.vercel.app`).
+- **Auth:** Firebase Auth (`omix-systems-cd1af`). The browser signs in with
+  Firebase (email/password or Google), exchanges the ID token for the worker's
+  own HS256 JWT, and sends that JWT on every API call.
+- **Media:** R2 bucket `phikila-storage`, bound as `MEDIA` in `wrangler.toml`.
+
+The legacy FastAPI app (`app/`, `alembic/`, `requirements.txt`) is dead code —
+ignored, not deployed. Never migrate it or import it.
 
 ## Commands
 
 ```bash
-pip install -r requirements.txt
-alembic upgrade head          # runs against the .env DATABASE_URL, not alembic.ini
-python seed_admin.py          # creates admin@phikila.com / 2026phikila (idempotent)
-uvicorn app.main:app --reload # server on :8000, docs at /docs
+# Backend (workers/) — note the registry/DNS quirks below
+cd workers
+npm run typecheck                  # tsc --noEmit
+./node_modules/.bin/wrangler dev   # local worker on :8787
+./node_modules/.bin/wrangler deploy
+./node_modules/.bin/wrangler secret put DATABASE_URL   # Neon connection string
+./node_modules/.bin/wrangler secret put JWT_SECRET
+
+# Frontend (frontend/)
+cd frontend
+cp .env.example .env.local         # VITE_FIREBASE_* + VITE_API_URL
+npm run dev                        # dev server proxies /api + /health to :8787
+npm run build                      # tsc -b && vite build
+
+# Deploy frontend to Vercel (run inside frontend/)
+vercel deploy --prod --yes
 ```
 
-There is **no test framework** (no pytest config, no tests/). `test_timetable_route.py` is an ad-hoc ASGI scope script; don't treat it as a suite.
+## Environment quirks (do not fight these)
 
-## Database gotchas
-
-- The real DB is the **Supabase cloud instance** in `.env` `DATABASE_URL`. `alembic/env.py` overrides `alembic.ini`'s `sqlalchemy.url` from that env var, and `app/core/database.py` does `load_dotenv(override=True)`. So migrations hit the **live database** — be careful with destructive changes. `app/config.py` is dead code, ignore it.
-- `.env` holds live credentials; never expose, commit, or log them.
-- `alembic/versions/` contains stale `*.bak` files — not applied migrations, ignore them. `repair_alembic.py` is a one-off script that hand-stamps the version table (OLD `0f66f2465814` → NEW `cfc36a84b06f`); not part of normal flow.
+- The machine's IPv6 route is broken. Node processes that open sockets
+  (`wrangler`, `vercel`, node scripts) must run with
+  `NODE_OPTIONS=--dns-result-order=ipv4first`. `curl` is fine without it.
+- The npm registry hangs. Prefer local binaries over `npx`, and always pass
+  `--registry=https://registry.npmjs.org/` when installing. `wrangler r2 bucket
+  create` also hangs/fails — create buckets via the Cloudflare API instead
+  (the bucket already exists; don't re-create it).
+- The Worker reaches Neon fine; the problem is only local DNS. Smoke-test DB
+  from the deployed worker via `GET /debug/db` on the workers.dev URL.
 
 ## Router prefix gotcha
 
-Two mounting styles in `app/main.py` — check a module's router before adding routes:
+Mounting style in `workers/src/index.ts`:
 
-- Routers that **declare their own prefix** (`/users`, `/school`, `/departments`, `/subjects`, `/students`, `/class_register`, `/timetable`, `/finance`): mounted with only `/api/v1` in `main.py`.
-- Routers with **no prefix** (`auth`, `academics`, `teachers`, `examinations`, `reports`): the full path segment is added in `main.py` (`/api/v1/auth`, `/api/v1/teachers`, etc.).
+- Routers that declare their own prefix (`school`, `platform`, `students`,
+  `teachers`, `attendance`, `examinations`, `finance`, `scheduling`,
+  `admissions`, `health`, `inventory`, `library`, `board`, `principal`): mounted
+  with `app.route('/api/v1/<name>', routes)`.
+- The auth router declares no prefix; its full path is added in `index.ts`
+  (`app.route('/api/v1/auth', authRoutes)`).
 
-Never add a prefix to a no-prefix router, and never mount a prefixed router with a duplicate segment (this double-prefix bug already happened to `teachers`).
+Never add a prefix to the auth router, and never mount a prefixed router with a
+duplicate segment.
 
-## Auth & hashing
+## Auth flow (worker)
 
-- JWT login: `POST /api/v1/auth/login` (OAuth2 form). `create_access_token` encodes the user's **email** as `sub`.
-- The only correct password hashing is `app/modules/authentication/security.py` (bcrypt). `app/core/security.py` uses `sha256_crypt` and is **dead/inconsistent — never import it**. `seed_admin.py` also uses bcrypt.
-- Use `from app.modules.authentication.dependencies import get_current_user` for protected routes (re-exports the working impl from `tokens.py`).
+- Firebase email/password and Google sign-in happen entirely in the browser.
+  The worker never sees Firebase credentials.
+- `POST /api/v1/auth/firebase` receives `{ id_token }`, verifies it against the
+  Firebase tokeninfo endpoint, upserts the user into `users` (keyed by
+  `firebase_uid`, `id` default `gen_random_uuid()`), and returns
+  `{ access_token, user }`.
+- The backend JWT is HS256 signed with `JWT_SECRET` (7-day expiry), `sub` = the
+  internal `users.id` UUID. `jwt.ts` is the only correct JWT implementation.
+- `authMiddleware` is lenient: it attaches `authUser` when a valid token is
+  present and passes through otherwise. `requireAuth` (in `src/routes/auth.ts`)
+  is what returns 401. Add `requireAuth` to any route that must reject
+  anonymous callers.
+- `src/lib/firebase.ts` verifies ID tokens; `src/lib/http.ts` has the CORS
+  middleware (wildcard origin — fine because the frontend uses bearer tokens,
+  never cookies).
 
-## Adding a module or model
+## Database
 
-- New modules: create under `app/modules/<name>/`, mount the router in `app/main.py`, and **import the models in `alembic/env.py`** or autogenerate won't see them.
-- `static/` is auto-created and served at `/static` (school logo uploads).
+- Neon Postgres via `@neondatabase/serverless`. Schema is created/applied from
+  `workers/db/migrations/*.sql` (additive; run manually against the live
+  database). Autogenerate is not used.
+- Route modules use `createSql(env)` for raw parameterized SQL. All writes go
+  through `src/lib/crud.ts` helpers where possible.
+- `.env`/secrets must never be committed or logged. `DATABASE_URL` and
+  `JWT_SECRET` live only as worker secrets and in `.dev.vars` (dev).
+
+## Admin seeding (fresh deployment)
+
+1. Create the user in Firebase (REST `accounts:signUp` or the console).
+2. Sign in via the app (or REST `accounts:signInWithPassword`) to get an ID
+   token, then `POST /api/v1/auth/firebase` for a backend JWT.
+3. `POST /api/v1/platform/administrators` with `{ email, role: "super_admin" }`
+   and that JWT. `GET /api/v1/platform/session` then reports
+   `is_super_admin: true`.
+
+## Adding a route module
+
+Create `workers/src/routes/<name>.ts` (Hono router), mount it in
+`workers/src/index.ts`, and follow the prefix rule above. No Alembic; add any
+new tables/columns as a new `workers/db/migrations/NNN_*.sql` file.

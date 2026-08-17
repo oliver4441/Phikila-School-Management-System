@@ -33,7 +33,6 @@ const PLATFORM_NAV: NavGroup = {
     { to: '/platform/requests', label: 'Access requests', icon: <InboxIcon /> },
     { to: '/platform/admins', label: 'Administrators', icon: <UserIcon /> },
     { to: '/platform/audit', label: 'Audit trail', icon: <LayersIcon /> },
-    { to: '/platform/email', label: 'Email & templates', icon: <InboxIcon /> },
     { to: '/settings/ai-providers', label: 'AI providers', icon: <SparkIcon /> },
   ],
 }

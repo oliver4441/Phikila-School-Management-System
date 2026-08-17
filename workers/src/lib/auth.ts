@@ -1,9 +1,10 @@
 import { createMiddleware } from 'hono/factory'
-import { anonDb } from './db'
+import { verifyToken } from './jwt'
 
 export type AuthUser = {
   id: string
   email: string | null
+  role: string | null
   user_metadata: Record<string, unknown>
   app_metadata: Record<string, unknown>
 }
@@ -15,9 +16,9 @@ declare module 'hono' {
 }
 
 /**
- * Verifies the caller's Supabase Auth bearer token and exposes the verified
- * identity as `c.get('authUser')`. Unauthenticated requests pass through with
- * `authUser === null`; individual routes decide whether that is acceptable.
+ * Verifies the caller's app session JWT (issued by /auth/firebase) and exposes
+ * the identity as `c.get('authUser')`. Unauthenticated requests pass through
+ * with `authUser === null`; individual routes decide whether that is acceptable.
  */
 export const authMiddleware = createMiddleware(async (c, next) => {
   const header = c.req.header('Authorization')
@@ -26,12 +27,19 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     c.set('authUser', null)
     return next()
   }
-  try {
-    const { data, error } = await anonDb().auth.getUser(token)
-    c.set('authUser', error || !data.user ? null : (data.user as unknown as AuthUser))
-  } catch {
-    c.set('authUser', null)
-  }
+  const claims = await verifyToken(c.env as never, token)
+  c.set(
+    'authUser',
+    claims
+      ? {
+          id: claims.sub,
+          email: claims.email ?? null,
+          role: claims.role ?? null,
+          user_metadata: {},
+          app_metadata: {},
+        }
+      : null,
+  )
   return next()
 })
 

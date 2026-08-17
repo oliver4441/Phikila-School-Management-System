@@ -1,5 +1,4 @@
-import { getLocalSession } from './localAuth'
-import { supabase } from './supabase'
+import { getStoredSession } from './authSession'
 
 const apiUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -25,13 +24,24 @@ export function friendlyApiError(error: unknown, action: string): string {
   return `We could not ${action}. Check your connection and try again.`
 }
 
-async function refreshSessionToken(): Promise<string | null> {
-  if (!supabase) return null
-  const { data: refreshed, error } = await supabase.auth.refreshSession()
-  if (!error && refreshed.session?.access_token) return refreshed.session.access_token
+export type ApiSession = {
+  access_token: string
+  user: { id: string; email: string | null; role: string | null }
+}
 
-  const { data: session } = await supabase.auth.getSession()
-  return session?.session?.access_token ?? null
+/** Exchange a Firebase ID token for a backend session token. */
+export async function exchangeFirebaseIdToken(idToken: string): Promise<ApiSession> {
+  const response = await fetch(`${apiUrl}/api/v1/auth/firebase`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ id_token: idToken }),
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    const detail = typeof payload?.detail === 'string' ? payload.detail : `Request failed (${response.status})`
+    throw new ApiError(detail, response.status, payload?.detail && typeof payload.detail !== 'string' ? payload.detail : undefined)
+  }
+  return response.json() as Promise<ApiSession>
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
@@ -39,39 +49,19 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, authenti
   headers.set('Accept', 'application/json')
   if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (authenticated) {
-    if (supabase) {
-      const { data, error } = await supabase.auth.getSession()
-      if (error || !data.session) throw new ApiError('Please sign in again.', 401)
-      headers.set('Authorization', `Bearer ${data.session.access_token}`)
-    } else {
-      const session = getLocalSession()
-      if (!session) throw new ApiError('Please sign in again.', 401)
-      headers.set('Authorization', `Bearer ${session.access_token}`)
-    }
+    const session = getStoredSession()
+    if (!session) throw new ApiError('Please sign in again.', 401)
+    headers.set('Authorization', `Bearer ${session.access_token}`)
   }
-  const doFetch = async (h: Headers) => {
-    const response = await fetch(`${apiUrl}${path}`, { ...init, headers: h })
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null)
-      const raw = payload?.detail
-      const message = typeof raw === 'string' ? raw : typeof raw?.message === 'string' ? raw.message : `Request failed (${response.status})`
-      throw new ApiError(message, response.status, typeof raw === 'object' ? raw : undefined)
-    }
-    if (response.status === 204) return undefined as T
-    return response.json() as Promise<T>
+  const response = await fetch(`${apiUrl}${path}`, { ...init, headers })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    const raw = payload?.detail
+    const message = typeof raw === 'string' ? raw : typeof raw?.message === 'string' ? raw.message : `Request failed (${response.status})`
+    throw new ApiError(message, response.status, typeof raw === 'object' ? raw : undefined)
   }
-  try { return await doFetch(headers) }
-  catch (error) {
-    if (authenticated && error instanceof ApiError && error.status === 401 && supabase) {
-      const newToken = await refreshSessionToken()
-      if (newToken && newToken !== headers.get('Authorization')?.replace(/^Bearer /, '')) {
-        const retryHeaders = new Headers(headers)
-        retryHeaders.set('Authorization', `Bearer ${newToken}`)
-        return await doFetch(retryHeaders)
-      }
-    }
-    throw error
-  }
+  if (response.status === 204) return undefined as T
+  return response.json() as Promise<T>
 }
 
 export type Identity = {

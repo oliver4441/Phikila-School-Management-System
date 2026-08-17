@@ -7,20 +7,12 @@ import { useAuth } from '../lib/auth'
 import { api } from '../lib/api'
 import { Link, useNavigate, useSearchParams } from '../lib/router'
 import { isValidEmail } from '../lib/password'
-import { isLocalAuthMode } from '../lib/supabase'
 import { useToast } from '../components/Toast'
 
 type Errors = { email?: string; password?: string }
 
-const DEMO_ACCOUNTS = [
-  { label: 'School admin', email: 'admin@phikila.com', hint: 'Full access, including platform tools' },
-  { label: 'Teacher', email: 'teacher@phikila.com', hint: "Mr. Kamau's timetable" },
-  { label: 'Student', email: 'student@phikila.com', hint: 'Form 3A timetable' },
-]
-
 export function LoginPage() {
-  const { signIn } = useAuth()
-  const localMode = isLocalAuthMode()
+  const { signIn, signInWithGoogle } = useAuth()
   const navigate = useNavigate()
   const params = useSearchParams()
   const { notify } = useToast()
@@ -30,6 +22,7 @@ export function LoginPage() {
   const [errors, setErrors] = useState<Errors>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [googleSubmitting, setGoogleSubmitting] = useState(false)
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
 
   const notice = params.get('notice')
@@ -63,6 +56,20 @@ export function LoginPage() {
     const result = await signIn(email, password)
     setSubmitting(false)
 
+    if (!result.ok) {
+      setFormError(result.message)
+      return
+    }
+    navigate(nextPath.startsWith('/') ? nextPath : '/', { replace: true })
+    notify('Signed in successfully.', 'success')
+  }
+
+  async function handleGoogle() {
+    if (googleSubmitting) return
+    setGoogleSubmitting(true)
+    setFormError(null)
+    const result = await signInWithGoogle()
+    setGoogleSubmitting(false)
     if (!result.ok) {
       setFormError(result.message)
       return
@@ -113,32 +120,20 @@ export function LoginPage() {
         </Alert>
       )}
 
-      {localMode && (
-        <div className="demo-accounts">
-          <h2 className="demo-accounts__title">Demo accounts</h2>
-          <p className="demo-accounts__note">One click signs you in. Password: demo2026</p>
-          <ul className="demo-accounts__list">
-            {DEMO_ACCOUNTS.map((account) => (
-              <li key={account.email}>
-                <button
-                  type="button"
-                  className="demo-account"
-                  disabled={submitting}
-                  onClick={() => {
-                    setEmail(account.email)
-                    setPassword('demo2026')
-                    setErrors({})
-                    setFormError(null)
-                  }}
-                >
-                  <span className="demo-account__label">{account.label}</span>
-                  <span className="demo-account__hint">{account.hint}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+      <div className="form">
+        <button
+          type="button"
+          className="button button--secondary button--block"
+          disabled={googleSubmitting}
+          onClick={handleGoogle}
+        >
+          {googleSubmitting && <Spinner label="Signing in with Google" />}
+          {googleSubmitting ? 'Signing in…' : 'Continue with Google'}
+        </button>
+        <div className="auth-divider" role="separator">
+          <span>or continue with email</span>
         </div>
-      )}
+      </div>
 
       <form className="form" onSubmit={handleSubmit} noValidate>
         <Field

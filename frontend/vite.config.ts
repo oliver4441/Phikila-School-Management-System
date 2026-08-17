@@ -2,40 +2,40 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const allowedPublicVariables = new Set([
-  'VITE_SUPABASE_URL',
-  'VITE_SUPABASE_ANON_KEY',
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
   'VITE_API_URL',
 ])
 
-// Vercel injects VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG automatically at
-// build time when the Observability / Speed Insights integration is enabled.
-// It is Vercel-managed public client configuration (e.g. script/endpoint
-// paths) intended to be read by the Vercel/Vite integration in the browser,
-// not an application secret. Allow it explicitly while keeping strict
-// validation for every other VITE_* variable.
-const vercelManagedVariables = new Set([
-  'VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG',
-])
+// Vercel injects several VITE_VERCEL_* system variables at build time when the
+// Git integration is enabled. They are Vercel-managed public build metadata
+// (repo, deployment, commit info), not application secrets. Allow the whole
+// VITE_VERCEL_* prefix while keeping strict validation for every other VITE_*
+// variable.
 
 export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, '.', 'VITE_')
 
-  // Both Supabase variables are required together for the production auth
-  // path. When both are absent the app runs in local auth mode (the backend's
-  // own token endpoint); a half-configured pair is a configuration error.
-  const hasSupabaseUrl = Boolean(environment['VITE_SUPABASE_URL']?.trim())
-  const hasSupabaseKey = Boolean(environment['VITE_SUPABASE_ANON_KEY']?.trim())
-  if (hasSupabaseUrl !== hasSupabaseKey) {
+  // The three Firebase publishable values are required together for signing
+  // in with Firebase (email/password and Google). A partial set is a
+  // configuration error: sign-in would fail at runtime for a confusing reason.
+  const firebaseValues = [
+    environment['VITE_FIREBASE_API_KEY']?.trim(),
+    environment['VITE_FIREBASE_AUTH_DOMAIN']?.trim(),
+    environment['VITE_FIREBASE_PROJECT_ID']?.trim(),
+  ]
+  if (firebaseValues.some((value) => Boolean(value)) && !firebaseValues.every(Boolean)) {
     throw new Error(
-      'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set together, or both omitted for local mode',
+      'VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN and VITE_FIREBASE_PROJECT_ID must all be set together',
     )
   }
 
   const unexpected = Object.keys(environment).filter(
     (name) =>
       name.startsWith('VITE_') &&
-      !allowedPublicVariables.has(name) &&
-      !vercelManagedVariables.has(name),
+      !name.startsWith('VITE_VERCEL_') &&
+      !allowedPublicVariables.has(name),
   )
   if (unexpected.length > 0) {
     throw new Error(

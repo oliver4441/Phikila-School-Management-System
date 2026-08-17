@@ -1,103 +1,99 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow, updateRowById } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const admissionsRoutes = new Hono()
+export const admissionsRoutes = new Hono<{ Bindings: Bindings }>()
 
 admissionsRoutes.get('/applications', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('admission_applications').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from admission_applications order by created_at desc`
+  return c.json(rows)
 })
 
 admissionsRoutes.get('/applications/stats', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('admission_applications').select('status')
+  const rows = await createSql(c.env)`select status, count(*)::int as count from admission_applications group by status`
   const counts: Record<string, number> = {}
-  for (const row of data ?? []) counts[row.status] = (counts[row.status] ?? 0) + 1
-  return c.json({ counts, total: data?.length ?? 0 })
+  for (const row of rows) counts[String(row.status)] = Number(row.count)
+  return c.json({ counts, total: Object.values(counts).reduce((a, b) => a + b, 0) })
 })
 
 admissionsRoutes.post('/applications', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('admission_applications').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'admission_applications', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 admissionsRoutes.get('/applications/:applicationId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('admission_applications').select('*').eq('id', c.req.param('applicationId')).maybeSingle()
-  if (!data) return c.json({ detail: 'Application not found.' }, 404)
-  return c.json(data)
+  const row = (await createSql(c.env)`select * from admission_applications where id = ${c.req.param('applicationId')} limit 1`)[0]
+  if (!row) return c.json({ detail: 'Application not found.' }, 404)
+  return c.json(row)
 })
 
 admissionsRoutes.patch('/applications/:applicationId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('admission_applications')
-    .update(body)
-    .eq('id', c.req.param('applicationId'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const updated = await updateRowById(createSql(c.env), 'admission_applications', c.req.param('applicationId'), body)
+  return c.json(updated)
 })
 
-/** Enroll an approved applicant → creates a student + enrollment record. */
 admissionsRoutes.post('/applications/:applicationId/enroll', async (c) => {
-  const { error } = requireAuth(c as never)
+  const { error, user } = requireAuth(c as never)
   if (error) return error
-  const client = db()
+  const db = createSql(c.env)
   const applicationId = c.req.param('applicationId')
-  const { data: application } = await client
-    .from('admission_applications')
-    .select('*')
-    .eq('id', applicationId)
-    .maybeSingle()
+  const body = await c.req.json().catch(() => ({}))
+  const application = (await db`select * from admission_applications where id = ${applicationId} limit 1`)[0]
   if (!application) return c.json({ detail: 'Application not found.' }, 404)
 
-  const { count } = await client.from('students').select('id', { count: 'exact' })
-  const admissionNumber = `ADM-${String((count ?? 0) + 1).padStart(4, '0')}`
+  const [{ n }] = await db`select count(*)::int as n from students`
+  const admissionNumber = `ADM-${String((n ?? 0) + 1).padStart(4, '0')}`
 
-  const { data: student, error: studentError } = await client
-    .from('students')
-    .insert({
-      first_name: application.first_name,
-      last_name: application.last_name,
-      date_of_birth: application.date_of_birth ?? null,
-      gender: application.gender ?? null,
-      admission_number: admissionNumber,
-    })
-    .select()
-    .single()
-  if (studentError) return jsonError(c, studentError.message, 400)
+  let student: Record<string, unknown>
+  try {
+    const rows = await db`
+      insert into students (admission_number, first_name, middle_name, last_name, gender, date_of_birth)
+      values (
+        ${admissionNumber},
+        ${application.first_name},
+        ${application.middle_name ?? null},
+        ${application.last_name},
+        coalesce(nullif(${application.gender ?? ''}, ''), 'Unspecified'),
+        coalesce(${application.date_of_birth ?? null}, current_date)
+      )
+      returning *
+    `
+    student = rows[0]
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 
-  const { error: enrollmentError } = await client.from('enrollment_records').insert({
-    student_id: student.id,
-    level_id: application.level_id ?? null,
-    stream_id: application.stream_id ?? null,
-    academic_year_id: application.academic_year_id ?? null,
-    enrollment_date: new Date().toISOString().slice(0, 10),
-    status: 'enrolled',
-  })
-  if (enrollmentError) return jsonError(c, enrollmentError.message, 400)
+  await db`
+    insert into enrollment_records (student_id, application_id, admission_date, level, stream, academic_year, admission_type, notes, created_by)
+    values (${student.id}, ${application.id}, ${body.admission_date ?? new Date().toISOString().slice(0, 10)}, coalesce(nullif(${application.applying_for_level ?? ''}, ''), null), ${body.stream ?? null}, ${body.academic_year ?? null}, 'new', ${body.notes ?? null}, ${user!.id})
+  `
 
-  await client.from('admission_applications').update({ status: 'enrolled' }).eq('id', applicationId)
+  await db`update admission_applications set status = 'enrolled' where id = ${applicationId}`
   return c.json({ student, status: 'enrolled' }, 201)
 })
 
 admissionsRoutes.get('/enrollments', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('enrollment_records').select('*').order('enrollment_date', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from enrollment_records order by admission_date desc`
+  return c.json(rows)
 })

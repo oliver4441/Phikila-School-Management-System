@@ -1,194 +1,192 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow, updateRowById, deleteRowById } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const financeRoutes = new Hono()
+export const financeRoutes = new Hono<{ Bindings: Bindings }>()
 
 financeRoutes.get('/overview', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const client = db()
+  const db = createSql(c.env)
   const [fees, invoices, payments, inbox, accounts] = await Promise.all([
-    client.from('fee_structures').select('*'),
-    client.from('student_invoices').select('*'),
-    client.from('payments').select('*'),
-    client.from('payment_inbox').select('*'),
-    client.from('chart_of_accounts').select('*'),
+    db`select * from fee_structures`,
+    db`select * from student_invoices`,
+    db`select * from payments`,
+    db`select * from payment_inbox`,
+    db`select * from chart_of_accounts`,
   ])
   return c.json({
-    fee_structures: fees.data ?? [],
-    invoices: invoices.data ?? [],
-    payments: payments.data ?? [],
-    payment_inbox: inbox.data ?? [],
-    chart_of_accounts: accounts.data ?? [],
+    fee_structures: fees,
+    invoices,
+    payments,
+    payment_inbox: inbox,
+    chart_of_accounts: accounts,
   })
 })
 
-// ── Fee structures ────────────────────────────────────────────────────────
 financeRoutes.get('/fee-structures', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('fee_structures').select('*').order('id')
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from fee_structures order by id`
+  return c.json(rows)
 })
 
 financeRoutes.post('/fee-structures', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('fee_structures').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'fee_structures', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 financeRoutes.patch('/fee-structures/:id', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('fee_structures')
-    .update(body)
-    .eq('id', c.req.param('id'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const updated = await updateRowById(createSql(c.env), 'fee_structures', c.req.param('id'), body)
+  return c.json(updated)
 })
 
 financeRoutes.delete('/fee-structures/:id', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  await db().from('fee_structures').delete().eq('id', c.req.param('id'))
+  await deleteRowById(createSql(c.env), 'fee_structures', c.req.param('id'))
   return c.body(null, 204)
 })
 
-// ── Invoices ──────────────────────────────────────────────────────────────
 financeRoutes.get('/invoices', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('student_invoices').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from student_invoices order by created_at desc`
+  return c.json(rows)
 })
 
 financeRoutes.post('/invoices', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('student_invoices').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'student_invoices', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 financeRoutes.patch('/invoices/:id', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('student_invoices')
-    .update(body)
-    .eq('id', c.req.param('id'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const updated = await updateRowById(createSql(c.env), 'student_invoices', c.req.param('id'), body)
+  return c.json(updated)
 })
 
-// ── Payments ──────────────────────────────────────────────────────────────
 financeRoutes.get('/payments', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('payments').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from payments order by created_at desc`
+  return c.json(rows)
 })
 
 financeRoutes.post('/payments', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
-  const { data, error: insertError } = await client.from('payments').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  if (body.reference) {
-    await client.from('payment_inbox').update({ status: 'matched' }).eq('reference', body.reference)
+  const db = createSql(c.env)
+  let payment: Record<string, unknown>
+  try {
+    payment = await insertRow(db, 'payments', body)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
   }
-  return c.json(data, 201)
+  if (body.reference) {
+    await db`update payment_inbox set status = 'matched' where reference = ${body.reference}`
+  }
+  return c.json(payment, 201)
 })
 
-// ── Payment inbox ─────────────────────────────────────────────────────────
 financeRoutes.get('/payment-inbox', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('payment_inbox').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from payment_inbox order by created_at desc`
+  return c.json(rows)
 })
 
 financeRoutes.patch('/payment-inbox/:id', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('payment_inbox')
-    .update(body)
-    .eq('id', c.req.param('id'))
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const updated = await updateRowById(createSql(c.env), 'payment_inbox', c.req.param('id'), body)
+  return c.json(updated)
 })
 
-// ── Receipts ──────────────────────────────────────────────────────────────
 financeRoutes.get('/receipts', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('finance_receipts').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from finance_receipts order by created_at desc`
+  return c.json(rows)
 })
 
 financeRoutes.post('/receipts', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('finance_receipts').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'finance_receipts', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
-// ── Chart of accounts / journals ──────────────────────────────────────────
 financeRoutes.get('/chart-of-accounts', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('chart_of_accounts').select('*').order('code')
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from chart_of_accounts order by code`
+  return c.json(rows)
 })
 
 financeRoutes.post('/chart-of-accounts', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db().from('chart_of_accounts').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  try {
+    const row = await insertRow(createSql(c.env), 'chart_of_accounts', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 financeRoutes.get('/journals', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const { data } = await db().from('finance_journals').select('*').order('created_at', { ascending: false })
-  return c.json(data ?? [])
+  const rows = await createSql(c.env)`select * from finance_journals order by created_at desc`
+  return c.json(rows)
 })
 
 financeRoutes.post('/journals', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
-  const { data, error: insertError } = await client.from('finance_journals').insert(body).select().single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  if (Array.isArray(body.entries)) {
-    await client
-      .from('finance_journal_entries')
-      .insert(body.entries.map((e: Record<string, unknown>) => ({ journal_id: data.id, ...e })))
+  const db = createSql(c.env)
+  let journal: Record<string, unknown>
+  try {
+    journal = await insertRow(db, 'finance_journals', body)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
   }
-  return c.json(data, 201)
+  if (Array.isArray(body.entries)) {
+    for (const e of body.entries as Record<string, unknown>[]) {
+      await db`insert into finance_journal_entries (journal_id, account_id, debit, credit, description) values (${journal.id}, ${e.account_id ?? null}, ${e.debit ?? 0}, ${e.credit ?? 0}, ${e.description ?? null})`
+    }
+  }
+  return c.json(journal, 201)
 })

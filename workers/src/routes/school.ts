@@ -1,29 +1,29 @@
 import { Hono } from 'hono'
-import { db } from '../lib/db'
+import { createSql } from '../lib/db'
+import { insertRow, updateRowById, upsertRow, pick } from '../lib/crud'
 import { requireAuth } from '../lib/auth'
 import { jsonError } from '../lib/http'
+import type { Bindings } from '../lib/env'
 
-export const schoolRoutes = new Hono()
+export const schoolRoutes = new Hono<{ Bindings: Bindings }>()
 
 schoolRoutes.get('/', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const client = db()
-  const { data } = await client.from('school_info').select('*').order('id').limit(1).maybeSingle()
-  if (!data) return c.json(null)
-  const [settings, branding, contact] = await Promise.all([
-    client.from('school_settings').select('*'),
-    client.from('school_branding').select('*').eq('school_id', data.id).maybeSingle(),
-    client.from('school_contact').select('*').eq('school_id', data.id).maybeSingle(),
+  const db = createSql(c.env)
+  const school = (await db`select * from school_info order by id limit 1`)[0]
+  if (!school) return c.json(null)
+  const [settings, brandingRows, contactRows] = await Promise.all([
+    db`select key, value from school_settings`,
+    db`select * from school_branding where school_id = ${school.id} limit 1`,
+    db`select * from school_contact where school_id = ${school.id} limit 1`,
   ])
-  const settingsMap = Object.fromEntries(
-    (settings.data ?? []).map((s) => [s.key, s.value]),
-  )
+  const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]))
   return c.json({
-    ...data,
+    ...school,
     settings: settingsMap,
-    branding: branding.data ?? null,
-    contact: contact.data ?? null,
+    branding: brandingRows[0] ?? null,
+    contact: contactRows[0] ?? null,
   })
 })
 
@@ -31,37 +31,33 @@ schoolRoutes.post('/', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: insertError } = await db()
-    .from('school_info')
-    .insert(body)
-    .select()
-    .single()
-  if (insertError) return jsonError(c, insertError.message, 400)
-  return c.json(data, 201)
+  const db = createSql(c.env)
+  try {
+    const row = await insertRow(db, 'school_info', body)
+    return c.json(row, 201)
+  } catch (err) {
+    return jsonError(c, (err as Error).message, 400)
+  }
 })
 
 schoolRoutes.patch('/', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const { data, error: updateError } = await db()
-    .from('school_info')
-    .update(body)
-    .order('id')
-    .limit(1)
-    .select()
-    .maybeSingle()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const db = createSql(c.env)
+  const school = (await db`select id from school_info order by id limit 1`)[0]
+  if (!school) return c.json({ detail: 'School not found.' }, 404)
+  const updated = await updateRowById(db, 'school_info', String(school.id), body)
+  return c.json(updated)
 })
 
 schoolRoutes.patch('/settings', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
+  const db = createSql(c.env)
   for (const [key, value] of Object.entries(body)) {
-    await client.from('school_settings').upsert({ key, value }, { onConflict: 'key' })
+    await db`insert into school_settings (key, value) values (${key}, to_jsonb(${String(value)}::text)) on conflict (key) do update set value = excluded.value, updated_at = now()`
   }
   return c.json({ ok: true })
 })
@@ -70,28 +66,18 @@ schoolRoutes.patch('/branding', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
-  const { data: school } = await client.from('school_info').select('id').order('id').limit(1).maybeSingle()
-  const { data, error: updateError } = await client
-    .from('school_branding')
-    .upsert({ school_id: school?.id ?? null, ...body }, { onConflict: 'school_id' })
-    .select()
-    .single()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const db = createSql(c.env)
+  const school = (await db`select id from school_info order by id limit 1`)[0]
+  const row = await upsertRow(db, 'school_branding', { school_id: school?.id ?? null, ...pick(body, 'primary_color', 'logo_url', 'accent_color') }, ['school_id'])
+  return c.json(row)
 })
 
 schoolRoutes.patch('/contact', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const body = await c.req.json().catch(() => ({}))
-  const client = db()
-  const { data: school } = await client.from('school_info').select('id').order('id').limit(1).maybeSingle()
-  const { data, error: updateError } = await client
-    .from('school_contact')
-    .upsert({ school_id: school?.id ?? null, ...body }, { onConflict: 'school_id' })
-    .select()
-    .single()
-  if (updateError) return jsonError(c, updateError.message, 400)
-  return c.json(data)
+  const db = createSql(c.env)
+  const school = (await db`select id from school_info order by id limit 1`)[0]
+  const row = await upsertRow(db, 'school_contact', { school_id: school?.id ?? null, ...pick(body, 'phone', 'email', 'physical_address') }, ['school_id'])
+  return c.json(row)
 })
