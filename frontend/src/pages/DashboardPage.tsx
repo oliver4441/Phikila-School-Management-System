@@ -3,7 +3,7 @@ import { Badge, EmptyState, ErrorState, LoadingBlock, Skeleton } from '../compon
 import { Alert } from '../components/Alert'
 import { QualityBars } from '../components/QualityBars'
 import { SchoolIcon, UserIcon, GridIcon, CheckIcon, SparkIcon } from '../components/icons'
-import { friendlyApiError, api } from '../lib/api'
+import { friendlyApiError, api, termStatus } from '../lib/api'
 import { finance } from '../lib/finance'
 import { students } from '../lib/students'
 import { useAsync } from '../lib/useAsync'
@@ -42,7 +42,7 @@ export function DashboardPage() {
   const version = data?.version ?? null
   const school = schoolQuery.data
   const currentYear = yearsQuery.data?.find((y) => y.is_current)
-  const currentTerm = termsQuery.data?.find((t) => t.is_current)
+  const currentTerm = termsQuery.data?.find((t) => termStatus(t) === 'current') ?? termsQuery.data?.[0]
   const scheduled = data?.lessons.scheduled ?? 0
   const required = data?.lessons.required ?? 0
   const completion = required > 0 ? Math.min(100, Math.round((scheduled / required) * 100)) : 0
@@ -110,7 +110,7 @@ export function DashboardPage() {
             <li><Link className="summary-card__link" to="/setup/academic-years"><span className="summary-card__label">Academic years</span><span className="summary-card__value">{yearsQuery.data?.length ?? 0}</span><span className="summary-card__detail">{currentYear?.name || 'Not set'}</span></Link></li>
             <li><Link className="summary-card__link" to="/setup/academic-years"><span className="summary-card__label">Terms</span><span className="summary-card__value">{termsQuery.data?.length ?? 0}</span><span className="summary-card__detail">{currentTerm?.name || 'Not set'}</span></Link></li>
             <li><Link className="summary-card__link" to="/setup/levels"><span className="summary-card__label">Levels</span><span className="summary-card__value">{levelsQuery.data?.length ?? 0}</span><span className="summary-card__detail">Grade levels</span></Link></li>
-            <li><Link className="summary-card__link" to="/setup/school"><span className="summary-card__label">School</span><span className="summary-card__value">{school?.is_active !== false ? 'Active' : 'Inactive'}</span><span className="summary-card__detail">{school?.code || 'Profile setup'}</span></Link></li>
+            <li><Link className="summary-card__link" to="/setup/school"><span className="summary-card__label">School</span><span className="summary-card__value">{school ? (school.status !== 'inactive' ? 'Active' : 'Inactive') : '—'}</span><span className="summary-card__detail">{school?.name || 'Profile setup'}</span></Link></li>
           </ul>
         </section>
       </div>

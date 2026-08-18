@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Badge, EmptyState, ErrorState } from '../components/States'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DataTable, type Column } from '../components/DataTable'
 import { LayersIcon } from '../components/icons'
 import { useToast } from '../components/Toast'
@@ -22,6 +23,9 @@ export function VersionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
+  const [confirmAction, setConfirmAction] = useState<
+    { type: 'publish' | 'restore'; version: Version } | null
+  >(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -42,6 +46,7 @@ export function VersionsPage() {
   }, [load])
 
   async function restore(version: Version) {
+    if (busy !== null) return
     setBusy(version.id)
     try {
       const draft = await scheduling.restore(version.id)
@@ -52,10 +57,12 @@ export function VersionsPage() {
       notify(friendlyApiError(err, 'restore that version'), 'error')
     } finally {
       setBusy(null)
+      setConfirmAction(null)
     }
   }
 
   async function publish(version: Version) {
+    if (busy !== null) return
     setBusy(version.id)
     try {
       await scheduling.publish(version.id)
@@ -65,6 +72,7 @@ export function VersionsPage() {
       notify(friendlyApiError(err, 'publish that version'), 'error')
     } finally {
       setBusy(null)
+      setConfirmAction(null)
     }
   }
 
@@ -126,7 +134,7 @@ export function VersionsPage() {
                     <button
                       type="button"
                       className="button button--ghost button--sm"
-                      onClick={() => publish(row)}
+                      onClick={() => setConfirmAction({ type: 'publish', version: row })}
                       disabled={busy === row.id}
                     >
                       Publish
@@ -135,7 +143,7 @@ export function VersionsPage() {
                   <button
                     type="button"
                     className="button button--ghost button--sm"
-                    onClick={() => restore(row)}
+                    onClick={() => setConfirmAction({ type: 'restore', version: row })}
                     disabled={busy === row.id}
                   >
                     {busy === row.id ? 'Working…' : 'Restore'}
@@ -175,6 +183,28 @@ export function VersionsPage() {
           </section>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={
+          confirmAction?.type === 'publish'
+            ? `Publish v${confirmAction.version.number}?`
+            : `Restore v${confirmAction?.version.number}?`
+        }
+        description={
+          confirmAction?.type === 'publish'
+            ? 'This makes it the live timetable for every class. Any currently published version is replaced (it stays available in this list).'
+            : 'Restoring copies this version into the editor as a new draft. Your current unsaved editor state is replaced.'
+        }
+        confirmLabel={busy !== null ? 'Working…' : confirmAction?.type === 'publish' ? 'Publish' : 'Restore'}
+        destructive={confirmAction?.type === 'publish'}
+        onConfirm={() => {
+          if (!confirmAction) return
+          if (confirmAction.type === 'publish') void publish(confirmAction.version)
+          else void restore(confirmAction.version)
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </>
   )
 }

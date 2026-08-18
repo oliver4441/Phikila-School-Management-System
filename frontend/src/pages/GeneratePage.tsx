@@ -52,6 +52,7 @@ export function GeneratePage() {
   const [starting, setStarting] = useState(false)
   const [seconds, setSeconds] = useState(30)
   const timer = useRef<number | null>(null)
+  const failures = useRef(0)
 
   const loadSummary = useCallback(async () => {
     setLoading(true)
@@ -75,6 +76,7 @@ export function GeneratePage() {
     timer.current = window.setInterval(async () => {
       try {
         const next = await scheduling.job(job.id)
+        failures.current = 0
         setJob(next)
         if (!ACTIVE.has(next.status)) {
           if (timer.current) window.clearInterval(timer.current)
@@ -86,7 +88,13 @@ export function GeneratePage() {
           }
         }
       } catch {
-        if (timer.current) window.clearInterval(timer.current)
+        // Transient poll failures should not silently strand the UI in a
+        // "running" state forever; give up only after repeated misses.
+        failures.current += 1
+        if (failures.current >= 5) {
+          if (timer.current) window.clearInterval(timer.current)
+          notify('Status updates for this job are failing.', 'error')
+        }
       }
     }, 900)
     return () => {
@@ -97,6 +105,7 @@ export function GeneratePage() {
   async function start() {
     if (starting) return
     setStarting(true)
+    failures.current = 0
     try {
       setJob(await scheduling.generate(seconds))
     } catch (err) {

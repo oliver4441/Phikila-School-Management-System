@@ -19,6 +19,8 @@ import { inventoryRoutes } from './routes/inventory'
 import { libraryRoutes } from './routes/library'
 import { boardRoutes } from './routes/board'
 import { principalRoutes } from './routes/principal'
+import { llmRoutes } from './routes/llm'
+import { ocrRoutes } from './routes/ocr'
 
 const app = createApp<Bindings>()
 
@@ -40,6 +42,8 @@ app.route('/api/v1/inventory', inventoryRoutes)
 app.route('/api/v1/library', libraryRoutes)
 app.route('/api/v1/board', boardRoutes)
 app.route('/api/v1/principal', principalRoutes)
+app.route('/api/v1/llm', llmRoutes)
+app.route('/api/v1/ocr', ocrRoutes)
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 

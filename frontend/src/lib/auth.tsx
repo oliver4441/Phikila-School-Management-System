@@ -20,7 +20,7 @@ import {
 } from 'firebase/auth'
 import { firebaseAuth, getFirebaseIdToken } from './firebase'
 import { friendlyAuthError } from './authErrors'
-import { apiFetch, exchangeFirebaseIdToken, type ApiSession } from './api'
+import { apiFetch, exchangeFirebaseIdToken, ApiError, type ApiSession } from './api'
 import { getStoredSession, setStoredSession } from './authSession'
 
 export type AuthResult = { ok: true; message?: string } | { ok: false; message: string }
@@ -160,8 +160,13 @@ function FirebaseAuthProvider({ children }: { children: ReactNode }) {
     if (!firebaseAuth) return { ok: false, message: 'Sign-in is not configured on this deployment.' }
     try {
       await signInWithEmailAndPassword(firebaseAuth, email.trim(), password)
+      const idToken = await getFirebaseIdToken()
+      if (!idToken) return { ok: false, message: 'We could not verify your session. Try again.' }
+      const fresh = await exchangeFirebaseIdToken(idToken)
+      setSession(fresh)
       return { ok: true, message: 'Signed in.' }
     } catch (error) {
+      if (error instanceof ApiError) return { ok: false, message: error.message }
       return { ok: false, message: friendlyAuthError(error, 'We could not sign you in.') }
     }
   }, [])
@@ -170,8 +175,18 @@ function FirebaseAuthProvider({ children }: { children: ReactNode }) {
     if (!firebaseAuth) return { ok: false, message: 'Sign-in is not configured on this deployment.' }
     try {
       await signInWithPopup(firebaseAuth, new GoogleAuthProvider())
+      const idToken = await getFirebaseIdToken()
+      if (!idToken) return { ok: false, message: 'We could not verify your session. Try again.' }
+      const fresh = await exchangeFirebaseIdToken(idToken)
+      setSession(fresh)
       return { ok: true, message: 'Signed in.' }
     } catch (error) {
+      // A Google account with no matching system account must not leave the
+      // browser signed in with an unusable Firebase session.
+      if (error instanceof ApiError) {
+        await firebaseSignOut(firebaseAuth).catch(() => {})
+        return { ok: false, message: error.message }
+      }
       return { ok: false, message: friendlyAuthError(error, 'We could not sign you in.') }
     }
   }, [])

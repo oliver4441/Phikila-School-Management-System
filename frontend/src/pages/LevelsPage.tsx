@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
-import { Badge, EmptyState, ErrorState } from '../components/States'
+import { EmptyState, ErrorState } from '../components/States'
 import { DataTable, type Column } from '../components/DataTable'
 import { LayersIcon, SearchIcon } from '../components/icons'
 import { api, friendlyApiError, type Level } from '../lib/api'
@@ -17,9 +17,12 @@ export function LevelsPage() {
   const term = query.trim().toLowerCase()
   const filtered = useMemo(() => {
     const rows = (Array.isArray(data) ? data : []).filter(
-      (level) => !term || level.name.toLowerCase().includes(term) || level.code.toLowerCase().includes(term),
+      (level) =>
+        !term ||
+        (level.name ?? '').toLowerCase().includes(term) ||
+        (level.description ?? '').toLowerCase().includes(term),
     )
-    return [...rows].sort((a, b) => a.display_order - b.display_order)
+    return [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   }, [data, term])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -28,14 +31,8 @@ export function LevelsPage() {
 
   const columns: Column<Level>[] = [
     { key: 'name', header: 'Level', render: (row) => row.name },
-    { key: 'code', header: 'Code', render: (row) => row.code },
-    { key: 'order', header: 'Order', render: (row) => row.display_order },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (row) =>
-        row.status === false ? <Badge tone="warning">Inactive</Badge> : <Badge tone="success">Active</Badge>,
-    },
+    { key: 'description', header: 'Description', render: (row) => row.description || '—' },
+    { key: 'order', header: 'Order', render: (row) => row.sort_order ?? 0 },
   ]
 
   return (

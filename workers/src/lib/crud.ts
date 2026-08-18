@@ -1,10 +1,13 @@
-import { escapeIdentifier } from '@neondatabase/serverless'
 import type { Sql } from './db'
+
+function ident(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`
+}
 
 export async function insertRow(db: Sql, table: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
   const keys = Object.keys(data).filter((k) => data[k] !== undefined)
   if (!keys.length) throw new Error('No fields to insert.')
-  const cols = keys.map((k) => escapeIdentifier(k)).join(', ')
+  const cols = keys.map((k) => ident(k)).join(', ')
   const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ')
   const values = keys.map((k) => data[k])
   const rows = await db.query(`insert into ${table} (${cols}) values (${placeholders}) returning *`, values)
@@ -19,7 +22,7 @@ export async function updateRowById(
 ): Promise<Record<string, unknown> | null> {
   const keys = Object.keys(data).filter((k) => data[k] !== undefined)
   if (!keys.length) return null
-  const sets = keys.map((k, i) => `${escapeIdentifier(k)} = $${i + 1}`).join(', ')
+  const sets = keys.map((k, i) => `${ident(k)} = $${i + 1}`).join(', ')
   const values = [...keys.map((k) => data[k]), id]
   const rows = await db.query(`update ${table} set ${sets} where id = $${keys.length + 1} returning *`, values)
   return rows[0] ?? null
@@ -37,12 +40,12 @@ export async function upsertRow(
 ): Promise<Record<string, unknown> | null> {
   const keys = Object.keys(data).filter((k) => data[k] !== undefined)
   if (!keys.length) return null
-  const cols = keys.map((k) => escapeIdentifier(k)).join(', ')
+  const cols = keys.map((k) => ident(k)).join(', ')
   const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ')
-  const conflict = conflictCols.map((c) => escapeIdentifier(c)).join(', ')
+  const conflict = conflictCols.map((c) => ident(c)).join(', ')
   const updateKeys = keys.filter((k) => !conflictCols.includes(k))
   const updates = updateKeys.length
-    ? updateKeys.map((k) => `${escapeIdentifier(k)} = excluded.${escapeIdentifier(k)}`).join(', ')
+    ? updateKeys.map((k) => `${ident(k)} = excluded.${ident(k)}`).join(', ')
     : 'updated_at = now()'
   const values = keys.map((k) => data[k])
   const rows = await db.query(

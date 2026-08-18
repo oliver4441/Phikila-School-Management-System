@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState } from '../components/States'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DataTable, type Column } from '../components/DataTable'
 import { CalendarIcon, SearchIcon } from '../components/icons'
 import { useToast } from '../components/Toast'
@@ -34,6 +35,8 @@ export function RequirementsPage() {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Requirement | null>(null)
+  const [removing, setRemoving] = useState(false)
   const [form, setForm] = useState({
     class_id: '',
     subject_id: '',
@@ -112,12 +115,17 @@ export function RequirementsPage() {
   }
 
   async function remove(row: Requirement) {
+    if (removing) return
+    setRemoving(true)
     try {
       await scheduling.deleteRequirement(row.id)
       notify('Requirement removed.', 'success')
       await load()
     } catch (err) {
       notify(friendlyApiError(err, 'remove that requirement'), 'error')
+    } finally {
+      setRemoving(false)
+      setPendingDelete(null)
     }
   }
 
@@ -316,7 +324,7 @@ export function RequirementsPage() {
                 <button
                   type="button"
                   className="button button--ghost button--sm"
-                  onClick={() => remove(row)}
+                  onClick={() => setPendingDelete(row)}
                 >
                   Delete
                 </button>
@@ -340,6 +348,22 @@ export function RequirementsPage() {
           </section>
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete this requirement?`}
+        description={
+          pendingDelete
+            ? `${pendingDelete.class_name ?? 'This class'} will stop studying ${
+                pendingDelete.subject_name ?? 'this subject'
+              } ${pendingDelete.periods_per_week} times a week.`
+            : ''
+        }
+        confirmLabel={removing ? 'Deleting…' : 'Delete requirement'}
+        destructive
+        onConfirm={() => pendingDelete && remove(pendingDelete)}
+        onCancel={() => setPendingDelete(null)}
+      />
     </>
   )
 }

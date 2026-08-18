@@ -50,6 +50,7 @@ const NAV: NavGroup[] = [
     label: 'People',
     items: [
       { to: '/students', label: 'Students', icon: <UserIcon /> },
+      { to: '/admissions', label: 'Admissions', icon: <InboxIcon /> },
       { to: '/setup/teachers', label: 'Teachers', icon: <UserIcon /> },
     ],
   },
@@ -59,6 +60,21 @@ const NAV: NavGroup[] = [
       { to: '/attendance', label: 'Attendance', icon: <CheckIcon /> },
       { to: '/examinations', label: 'Examinations', icon: <LayersIcon /> },
       { to: '/finance', label: 'Finance', icon: <GridIcon /> },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { to: '/health', label: 'Health & welfare', icon: <CheckIcon /> },
+      { to: '/inventory', label: 'Inventory', icon: <GridIcon /> },
+      { to: '/library', label: 'Library', icon: <LayersIcon /> },
+    ],
+  },
+  {
+    label: 'Governance',
+    items: [
+      { to: '/board', label: 'Board', icon: <SchoolIcon /> },
+      { to: '/principal', label: 'Principal', icon: <UserIcon /> },
     ],
   },
   {

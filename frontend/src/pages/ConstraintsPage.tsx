@@ -4,6 +4,7 @@ import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState } from '../components/States'
 import { DataTable, type Column } from '../components/DataTable'
 import { Field } from '../components/Field'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { LayersIcon, SearchIcon } from '../components/icons'
 import { friendlyApiError } from '../lib/api'
 import { scheduling } from '../lib/scheduling'
@@ -11,14 +12,11 @@ import { useToast } from '../components/Toast'
 
 type Constraint = {
   id: number
-  kind?: string
-  scope?: string
-  target_id?: number | null
-  is_hard?: boolean
-  weight?: number | null
-  params?: Record<string, unknown>
-  enabled?: boolean
-  note?: string | null
+  type: string
+  subject?: string | null
+  payload?: Record<string, unknown> | null
+  active?: boolean | null
+  created_at?: string | null
 }
 
 export function ConstraintsPage() {
@@ -29,9 +27,10 @@ export function ConstraintsPage() {
   const [query, setQuery] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState('soft')
-  const [weight, setWeight] = useState('1')
+  const [rule, setRule] = useState('')
+  const [subject, setSubject] = useState('')
+  const [pendingDelete, setPendingDelete] = useState<Constraint | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -48,32 +47,32 @@ export function ConstraintsPage() {
   }, [rows, query])
 
   async function create() {
-    if (!name.trim() || saving) return
+    if (!rule.trim() || saving) return
     setSaving(true)
     try {
-      // Maps onto the solver's real constraint model: a school-wide rule that
-      // is either hard (must hold) or soft (weighted preference).
+      // tt_constraints requires `type`; subject and active are optional extras.
       await scheduling.createConstraint({
-        kind: 'school_rule',
-        scope: 'school',
-        is_hard: kind === 'hard',
-        weight: Number(weight) || 1,
-        note: name.trim(),
+        type: rule.trim(),
+        subject: subject.trim() || null,
+        active: true,
       })
-      notify('Constraint added.', 'success'); setName(''); setFormOpen(false); await load()
+      notify('Constraint added.', 'success'); setRule(''); setSubject(''); setFormOpen(false); await load()
     } catch (err) { notify(friendlyApiError(err, 'create the constraint'), 'error') }
     finally { setSaving(false) }
   }
 
-  async function remove(id: number) {
-    try { await scheduling.deleteConstraint(id); notify('Constraint removed.', 'success'); await load() }
+  async function confirmDelete() {
+    if (!pendingDelete || deleting) return
+    setDeleting(true)
+    try { await scheduling.deleteConstraint(pendingDelete.id); notify('Constraint removed.', 'success'); setPendingDelete(null); await load() }
     catch (err) { notify(friendlyApiError(err, 'remove the constraint'), 'error') }
+    finally { setDeleting(false) }
   }
 
   const columns: Column<Constraint>[] = [
-    { key: 'name', header: 'Constraint', render: (row) => String(row.note ?? row.kind ?? `Constraint #${row.id}`) },
-    { key: 'kind', header: 'Type', render: (row) => <Badge tone={row.is_hard ? 'warning' : 'success'}>{row.is_hard ? 'Hard rule' : 'Soft preference'}</Badge> },
-    { key: 'weight', header: 'Weight', render: (row) => row.weight == null ? '—' : String(row.weight) },
+    { key: 'type', header: 'Constraint', render: (row) => row.type },
+    { key: 'subject', header: 'Applies to', render: (row) => row.subject || '—' },
+    { key: 'active', header: 'Status', render: (row) => <Badge tone={row.active === false ? 'warning' : 'success'}>{row.active === false ? 'Inactive' : 'Active'}</Badge> },
   ]
 
   return <>
@@ -82,15 +81,15 @@ export function ConstraintsPage() {
       <h2 className="section__title">New constraint</h2>
       <Alert tone="info">The backend remains the authority for supported constraint types and validation.</Alert>
       <div className="form form--grid">
-        <Field label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
-        <Field label="Type" value={kind} onChange={(e) => setKind(e.target.value)} hint="hard or soft" />
-        <Field label="Weight" type="number" min={1} value={weight} onChange={(e) => setWeight(e.target.value)} />
-        <div className="form__row form--grid__full"><button className="button button--primary" type="button" disabled={!name.trim() || saving} onClick={() => void create()}>{saving ? 'Saving…' : 'Save constraint'}</button><button className="button button--secondary" type="button" onClick={() => setFormOpen(false)}>Cancel</button></div>
+        <Field label="Rule" required value={rule} onChange={(e) => setRule(e.target.value)} hint="e.g. No lesson overlaps for Form 2A on Monday" />
+        <Field label="Applies to" value={subject} onChange={(e) => setSubject(e.target.value)} hint="optional — e.g. a teacher, class or room" />
+        <div className="form__row form--grid__full"><button className="button button--primary" type="button" disabled={!rule.trim() || saving} onClick={() => void create()}>{saving ? 'Saving…' : 'Save constraint'}</button><button className="button button--secondary" type="button" onClick={() => setFormOpen(false)}>Cancel</button></div>
       </div>
     </section>}
     {error ? <ErrorState title="Constraints could not load" message={error} onRetry={load} /> : <section className="card section">
       <div className="toolbar"><div className="search"><SearchIcon className="search__icon" width={18} height={18} /><label className="visually-hidden" htmlFor="constraint-search">Search constraints</label><input id="constraint-search" className="input input--search" type="search" placeholder="Search constraints" value={query} onChange={(e) => setQuery(e.target.value)} /></div>{!loading && <span className="toolbar__count">{filtered.length} of {rows.length}</span>}</div>
-      <DataTable caption="Scheduling constraints" columns={columns} rows={filtered} rowKey={(row) => row.id} loading={loading} loadingLabel="Loading constraints" empty={<EmptyState title="No constraints yet" description="Add constraints when the school needs rules beyond the default scheduling engine." icon={<LayersIcon width={22} height={22} />} />} rowActions={(row) => <button className="button button--ghost button--sm" type="button" onClick={() => void remove(row.id)}>Delete</button>} />
+      <DataTable caption="Scheduling constraints" columns={columns} rows={filtered} rowKey={(row) => row.id} loading={loading} loadingLabel="Loading constraints" empty={<EmptyState title="No constraints yet" description="Add constraints when the school needs rules beyond the default scheduling engine." icon={<LayersIcon width={22} height={22} />} />} rowActions={(row) => <button className="button button--ghost button--sm" type="button" onClick={() => setPendingDelete(row)}>Delete</button>} />
     </section>}
+    <ConfirmDialog open={pendingDelete !== null} title="Delete constraint?" description={pendingDelete ? `"${pendingDelete.type}" will be permanently removed. This cannot be undone.` : ''} confirmLabel="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setPendingDelete(null)} />
   </>
 }
