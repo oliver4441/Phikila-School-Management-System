@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState } from '../components/States'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DataTable, type Column } from '../components/DataTable'
 import { Field } from '../components/Field'
 import { LayersIcon, SearchIcon, UserIcon } from '../components/icons'
@@ -49,6 +50,8 @@ export function SetupPage({ kind }: { kind: Kind }) {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Row | 'new' | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Row | null>(null)
+  const [removing, setRemoving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -85,6 +88,8 @@ export function SetupPage({ kind }: { kind: Kind }) {
   }, [rows, query])
 
   async function remove(row: Row) {
+    if (removing) return
+    setRemoving(true)
     try {
       await (kind === 'teachers'
         ? scheduling.deleteTeacher(row.id)
@@ -97,6 +102,9 @@ export function SetupPage({ kind }: { kind: Kind }) {
       await load()
     } catch (err) {
       notify(friendlyApiError(err, `remove the ${TITLES[kind].singular}`), 'error')
+    } finally {
+      setRemoving(false)
+      setPendingDelete(null)
     }
   }
 
@@ -257,7 +265,7 @@ export function SetupPage({ kind }: { kind: Kind }) {
                 <button
                   type="button"
                   className="button button--ghost button--sm"
-                  onClick={() => remove(row)}
+                  onClick={() => setPendingDelete(row)}
                 >
                   Delete
                 </button>
@@ -266,6 +274,20 @@ export function SetupPage({ kind }: { kind: Kind }) {
           />
         </section>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete this ${TITLES[kind].singular}?`}
+        description={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed. Any timetable entries that depend on it may become unassigned.`
+            : ''
+        }
+        confirmLabel={removing ? 'Deleting…' : `Delete ${TITLES[kind].singular}`}
+        destructive
+        onConfirm={() => pendingDelete && remove(pendingDelete)}
+        onCancel={() => setPendingDelete(null)}
+      />
     </>
   )
 }

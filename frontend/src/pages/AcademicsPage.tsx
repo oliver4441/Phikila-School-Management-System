@@ -3,7 +3,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Badge, EmptyState, ErrorState } from '../components/States'
 import { DataTable, type Column } from '../components/DataTable'
 import { CalendarIcon, SearchIcon } from '../components/icons'
-import { api, friendlyApiError, type AcademicYear, type Term } from '../lib/api'
+import { api, friendlyApiError, termStatus, yearStatus, type AcademicYear, type Term } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 
 type Data = { years: AcademicYear[]; terms: Term[] }
@@ -41,8 +41,10 @@ export function AcademicsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (row) =>
-        row.is_current ? <Badge tone="success">Current</Badge> : <Badge>{row.status || 'Recorded'}</Badge>,
+      render: (row) => {
+        const status = yearStatus(row)
+        return status === 'current' ? <Badge tone="success">Current</Badge> : status === 'completed' ? <Badge>Completed</Badge> : <Badge>Upcoming</Badge>
+      },
     },
   ]
 
@@ -53,7 +55,10 @@ export function AcademicsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (row) => (row.is_current ? <Badge tone="success">Current</Badge> : <Badge>Scheduled</Badge>),
+      render: (row) => {
+        const status = termStatus(row)
+        return status === 'current' ? <Badge tone="success">Current</Badge> : status === 'completed' ? <Badge>Completed</Badge> : <Badge>Upcoming</Badge>
+      },
     },
   ]
 

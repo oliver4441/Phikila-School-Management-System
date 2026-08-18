@@ -6,7 +6,7 @@ import { PasswordField } from '../components/Field'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { AlertIcon, CheckIcon, SearchIcon, SparkIcon } from '../components/icons'
 import { useToast } from '../components/Toast'
-import { friendlyApiError } from '../lib/api'
+import { ApiError, friendlyApiError } from '../lib/api'
 import {
   llm,
   PROVIDER_STATUS_LABEL,
@@ -46,6 +46,7 @@ export function LlmProvidersPage() {
   const [encryptionReady, setEncryptionReady] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notAvailable, setNotAvailable] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [defaults, setDefaults] = useState<{ provider: string | null; model_id: string | null }>({
     provider: null,
@@ -55,12 +56,15 @@ export function LlmProvidersPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setNotAvailable(false)
     try {
       const [data, def] = await Promise.all([llm.providers(), llm.getDefault()])
       setProviders(data.providers)
       setEncryptionReady(data.encryption_configured)
       setDefaults(def)
     } catch (err) {
+      // 501 is a deliberate "not on this deployment" stub — not retryable.
+      setNotAvailable(err instanceof ApiError && err.status === 501)
       setError(friendlyApiError(err, 'load AI provider settings'))
     } finally {
       setLoading(false)
@@ -92,7 +96,11 @@ export function LlmProvidersPage() {
         </Alert>
       )}
 
-      {error ? (
+      {notAvailable ? (
+        <Alert tone="info" title="AI providers are not available on this deployment">
+          {error}
+        </Alert>
+      ) : error ? (
         <ErrorState title="Provider settings could not load" message={error} onRetry={load} />
       ) : loading ? (
         <div className="card section">
@@ -151,6 +159,7 @@ function ProviderCard({
   const [showForm, setShowForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   async function connect(event: FormEvent) {
     event.preventDefault()
@@ -185,6 +194,8 @@ function ProviderCard({
   }
 
   async function disconnect() {
+    if (removing) return
+    setRemoving(true)
     try {
       await llm.disconnect(provider.provider)
       setConfirmRemove(false)
@@ -192,6 +203,8 @@ function ProviderCard({
       onChanged()
     } catch (err) {
       notify(friendlyApiError(err, `remove the ${provider.label} key`), 'error')
+    } finally {
+      setRemoving(false)
     }
   }
 

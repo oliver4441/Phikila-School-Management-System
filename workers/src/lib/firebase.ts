@@ -17,6 +17,9 @@ export type FirebaseClaims = {
   name?: string
   email_verified?: boolean
   picture?: string
+  firebase?: {
+    sign_in_provider?: string
+  }
 }
 
 function base64UrlToBytes(input: string): Uint8Array {

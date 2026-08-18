@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, LoadingBlock } from '../components/States'
-import { friendlyApiError, apiFetch } from '../lib/api'
+import { ApiError, friendlyApiError, apiFetch } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 
 /* ------------------------------------------------------------------ types */
@@ -262,6 +262,7 @@ export function OcrScanPage() {
   const [lastResult, setLastResult] = useState<ScanResult | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [showCamera, setShowCamera] = useState(false)
+  const [ocrUnavailable, setOcrUnavailable] = useState(false)
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload')
 
   // Load scan history
@@ -313,6 +314,8 @@ export function OcrScanPage() {
       setActiveTab('history')
       reloadHistory()
     } catch (err) {
+      // 501 is a deliberate "not on this deployment" stub — not retryable.
+      if (err instanceof ApiError && err.status === 501) setOcrUnavailable(true)
       setUploadError(friendlyApiError(err, 'scan the document'))
     } finally {
       setScanning(false)
@@ -349,20 +352,34 @@ export function OcrScanPage() {
       />
 
       {/* ---- Tab bar ---- */}
-      <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+      <div role="tablist" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'upload'}
           className={`button ${activeTab === 'upload' ? 'button--primary' : 'button--secondary'} button--sm`}
           onClick={() => setActiveTab('upload')}
         >
           📄 Upload
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'history'}
           className={`button ${activeTab === 'history' ? 'button--primary' : 'button--secondary'} button--sm`}
           onClick={() => setActiveTab('history')}
         >
           📋 History {history?.length ? `(${history.length})` : ''}
         </button>
       </div>
+
+      {ocrUnavailable && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Alert tone="info" title="Document scanning is not available on this deployment">
+            {uploadError}
+          </Alert>
+        </div>
+      )}
 
       {activeTab === 'upload' && (
         <>
@@ -371,18 +388,20 @@ export function OcrScanPage() {
             <h2 className="section__title">Capture or Upload</h2>
 
             {/* Source buttons */}
-            <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
               <button
+                type="button"
                 className="button button--primary"
                 onClick={() => fileRef.current?.click()}
-                style={{ flex: 1 }}
+                style={{ flex: '1 1 10rem' }}
               >
                 📁 Choose File
               </button>
               <button
+                type="button"
                 className="button button--secondary"
                 onClick={() => setShowCamera(true)}
-                style={{ flex: 1 }}
+                style={{ flex: '1 1 10rem' }}
               >
                 📷 Take Photo
               </button>
@@ -475,8 +494,9 @@ export function OcrScanPage() {
               )}
 
               <button
+                type="button"
                 className="button button--primary"
-                disabled={!selectedFile || scanning}
+                disabled={!selectedFile || scanning || ocrUnavailable}
                 onClick={handleUpload}
               >
                 {scanning ? '⏳ Scanning…' : '🔍 Scan Document'}

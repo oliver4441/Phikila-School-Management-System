@@ -61,8 +61,6 @@ platformRoutes.get('/session', async (c) => {
 })
 
 platformRoutes.get('/access-requests/options', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
   const schools = await db`select id, name from school_info order by id`
   return c.json({
@@ -114,7 +112,7 @@ platformRoutes.post('/access-requests/:requestId/decide', async (c) => {
 
   const requestId = c.req.param('requestId')
   const body = await c.req.json().catch(() => ({}))
-  const { approve, role, note } = body
+  const { approve, role, note, school_id } = body
   const status = approve ? 'approved' : 'rejected'
 
   const request = (await db`select * from tt_access_requests where id = ${requestId} limit 1`)[0]
@@ -122,8 +120,15 @@ platformRoutes.post('/access-requests/:requestId/decide', async (c) => {
 
   await db`update tt_access_requests set status = ${status}, decision_note = ${note ?? null}, decided_by = ${user!.id}, decided_at = now() where id = ${requestId}`
 
-  if (approve && (role === 'super_admin' || role === 'admin')) {
-    await db`insert into tt_platform_admins (user_id, role) values (${request.user_id}, 'admin') on conflict (user_id) do update set role = excluded.role`
+  if (approve) {
+    // Record which school was actually granted, so the decision is reflected
+    // in the request row rather than silently dropping the admin's choice.
+    if (school_id) {
+      await db`update tt_access_requests set requested_school_id = ${school_id} where id = ${requestId}`
+    }
+    if (role === 'super_admin' || role === 'admin') {
+      await db`insert into tt_platform_admins (user_id, role) values (${request.user_id}, 'admin') on conflict (user_id) do update set role = excluded.role`
+    }
   }
   return c.json({ ok: true })
 })
@@ -132,27 +137,57 @@ platformRoutes.get('/overview', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const [schools, requests, admins] = await Promise.all([
-    db`select * from school_info order by id`,
-    db`select * from tt_access_requests order by created_at desc`,
-    db`select * from tt_platform_admins order by id`,
+  const [schools, users, teachers, classes, pendingRequests, superAdmins, recent] = await Promise.all([
+    db`select count(*)::int as n from school_info`,
+    db`select count(*)::int as n from users`,
+    db`select count(*)::int as n from teachers`,
+    db`select count(*)::int as n from class_registers`,
+    db`select count(*)::int as n from tt_access_requests where status = 'pending'`,
+    db`select count(*)::int as n from tt_platform_admins where role = 'super_admin'`,
+    db`select t.id, t.created_at as at, u.email as actor, t.action,
+              coalesce(t.detail->>'summary', t.action) as summary
+       from tt_platform_audit t left join users u on u.id = t.user_id
+       order by t.created_at desc limit 10`,
   ])
   return c.json({
-    schools,
-    school_count: schools.length,
-    requests,
-    request_count: requests.length,
-    admins,
-    admin_count: admins.length,
+    schools: schools[0]?.n ?? 0,
+    users: users[0]?.n ?? 0,
+    teachers: teachers[0]?.n ?? 0,
+    classes: classes[0]?.n ?? 0,
+    pending_requests: pendingRequests[0]?.n ?? 0,
+    super_admins: superAdmins[0]?.n ?? 0,
+    recent,
   })
 })
+
+const SCHOOL_SELECT = `
+  select s.id, s.name, s.slug, s.timezone, s.academic_year,
+         coalesce(s.status, 'active') as status,
+         (select count(*) from users) as users,
+         (select count(*) from teachers) as teachers,
+         (select count(*) from class_registers) as classes,
+         s.created_at
+  from school_info s
+`
 
 platformRoutes.get('/schools', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const rows = await db`select * from school_info order by id`
-  return c.json({ schools: rows, total: rows.length })
+  const q = c.req.query()
+  const where: string[] = []
+  const params: unknown[] = []
+  if (q.search) {
+    params.push(`%${q.search}%`)
+    where.push(`(lower(s.name) like lower($${params.length}) or lower(s.slug) like lower($${params.length}))`)
+  }
+  if (q.status) {
+    params.push(q.status)
+    where.push(`lower(coalesce(s.status, 'active')) = lower($${params.length})`)
+  }
+  const whereSql = where.length ? `where ${where.join(' and ')}` : ''
+  const rows = await db.query(`${SCHOOL_SELECT} ${whereSql} order by s.id`, params)
+  return c.json(rows)
 })
 
 platformRoutes.post('/schools', async (c) => {
@@ -168,7 +203,8 @@ platformRoutes.post('/schools', async (c) => {
       timezone: body.timezone ?? null,
       status: body.status ?? 'active',
     })
-    return c.json(row, 201)
+    const [school] = await db.query(`${SCHOOL_SELECT} where s.id = $1`, [row.id])
+    return c.json(school, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
   }
@@ -178,9 +214,9 @@ platformRoutes.get('/schools/:schoolId', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const row = (await db`select * from school_info where id = ${c.req.param('schoolId')} limit 1`)[0]
-  if (!row) return c.json({ detail: 'School not found.' }, 404)
-  return c.json(row)
+  const rows = await db.query(`${SCHOOL_SELECT} where s.id = $1 limit 1`, [c.req.param('schoolId')])
+  if (!rows[0]) return c.json({ detail: 'School not found.' }, 404)
+  return c.json(rows[0])
 })
 
 platformRoutes.patch('/schools/:schoolId', async (c) => {
@@ -195,9 +231,10 @@ platformRoutes.patch('/schools/:schoolId', async (c) => {
 platformRoutes.post('/schools/:schoolId/status', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
-  const updated = await updateRowById(db, 'school_info', c.req.param('schoolId'), { status: body.status ?? 'active' })
+  const active = c.req.query('active')
+  const status = active === 'true' ? 'active' : active === 'false' ? 'inactive' : (await c.req.json().catch(() => ({}))).status ?? 'active'
+  const updated = await updateRowById(db, 'school_info', c.req.param('schoolId'), { status })
   return c.json(updated)
 })
 
@@ -205,7 +242,11 @@ platformRoutes.get('/schools/:schoolId/users', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const rows = await db`select * from users order by created_at desc`
+  const rows = await db.query(
+    `select u.id as user_id, u.email, coalesce(u.role, 'user') as role,
+            (u.status = 'active') as is_active, u.created_at
+     from users u order by u.created_at desc`,
+  )
   return c.json(rows)
 })
 
@@ -229,10 +270,16 @@ platformRoutes.delete('/schools/:schoolId/administrators/:userId', async (c) => 
 })
 
 platformRoutes.get('/administrators', async (c) => {
-  const { error } = requireAuth(c as never)
+  const { error, user } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const rows = await db`select * from tt_platform_admins order by id`
+  const rows = await db.query(
+    `select a.user_id, u.email, null as granted_by, a.created_at,
+            (a.user_id = $1) as is_self
+     from tt_platform_admins a left join users u on u.id = a.user_id
+     order by a.created_at`,
+    [user!.id],
+  )
   return c.json(rows)
 })
 
@@ -259,7 +306,14 @@ platformRoutes.get('/audit', async (c) => {
   const { error } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const rows = await db`select * from tt_platform_audit order by created_at desc limit 200`
+  const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') ?? '50', 10) || 50))
+  const rows = await db.query(
+    `select t.id, t.created_at as at, u.email as actor, t.action,
+            coalesce(t.detail->>'summary', t.action) as summary
+     from tt_platform_audit t left join users u on u.id = t.user_id
+     order by t.created_at desc limit $1`,
+    [limit],
+  )
   return c.json(rows)
 })
 

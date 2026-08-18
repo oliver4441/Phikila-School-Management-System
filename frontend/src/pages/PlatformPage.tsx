@@ -138,6 +138,7 @@ export function PlatformSchoolsPage() {
   const [status, setStatus] = useState('all')
   const [creating, setCreating] = useState(false)
   const [confirm, setConfirm] = useState<School | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -156,6 +157,8 @@ export function PlatformSchoolsPage() {
   }, [load])
 
   async function toggleStatus(school: School) {
+    if (busy) return
+    setBusy(true)
     try {
       await platform.setSchoolStatus(school.id, school.status !== 'active')
       notify(
@@ -166,6 +169,8 @@ export function PlatformSchoolsPage() {
       await load()
     } catch (err) {
       notify(friendlyApiError(err, 'change the school status'), 'error')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -306,7 +311,7 @@ export function PlatformSchoolsPage() {
         open={confirm !== null}
         title={`Deactivate ${confirm?.name ?? 'this school'}?`}
         description="This prevents its users from accessing the application. All existing data is retained and the school can be reactivated at any time."
-        confirmLabel="Deactivate school"
+        confirmLabel={busy ? 'Working…' : 'Deactivate school'}
         destructive
         onCancel={() => setConfirm(null)}
         onConfirm={() => confirm && toggleStatus(confirm)}
@@ -407,9 +412,14 @@ export function PlatformSchoolDetailPage() {
   const [role, setRole] = useState('admin')
   const [adding, setAdding] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<SchoolUser | null>(null)
+  const [removing, setRemoving] = useState(false)
 
   const load = useCallback(async () => {
-    if (!schoolId) return
+    if (!schoolId) {
+      setLoading(false)
+      setError(null)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -447,6 +457,8 @@ export function PlatformSchoolDetailPage() {
   }
 
   async function remove(user: SchoolUser) {
+    if (removing) return
+    setRemoving(true)
     try {
       await platform.removeAdministrator(schoolId, user.user_id)
       notify('Access removed.', 'success')
@@ -454,6 +466,8 @@ export function PlatformSchoolDetailPage() {
       await load()
     } catch (err) {
       notify(friendlyApiError(err, 'remove that user'), 'error')
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -585,7 +599,7 @@ export function PlatformSchoolDetailPage() {
         open={confirmRemove !== null}
         title="Remove this person's access?"
         description={`${confirmRemove?.email ?? 'This user'} will lose access to ${school?.name ?? 'this school'}. Their account and data are retained.`}
-        confirmLabel="Remove access"
+        confirmLabel={removing ? 'Removing…' : 'Remove access'}
         destructive
         onCancel={() => setConfirmRemove(null)}
         onConfirm={() => confirmRemove && remove(confirmRemove)}

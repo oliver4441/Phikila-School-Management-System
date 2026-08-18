@@ -113,6 +113,7 @@ export function TimetablePage() {
   const [explanation, setExplanation] = useState<Explanation | null>(null)
   const [busy, setBusy] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [confirmPublish, setConfirmPublish] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState<Lesson | null>(null)
   const [history, setHistory] = useState<
     { lessonId: number; before: { day_index: number; period_index: number }; after: { day_index: number; period_index: number } }[]
@@ -375,6 +376,7 @@ export function TimetablePage() {
   async function handlePublish() {
     if (!bundle?.version || publishing) return
     setPublishing(true)
+    setConfirmPublish(false)
     try {
       await scheduling.publish(bundle.version.id)
       notify('Timetable published.', 'success')
@@ -634,7 +636,7 @@ export function TimetablePage() {
               <button
                 type="button"
                 className="button button--primary button--sm"
-                onClick={handlePublish}
+                onClick={() => setConfirmPublish(true)}
                 disabled={publishing || hardCount > 0}
                 title={hardCount > 0 ? 'Resolve hard conflicts first' : undefined}
               >
@@ -769,16 +771,20 @@ export function TimetablePage() {
               <button
                 type="button"
                 className="icon-button icon-button--subtle"
+                aria-label="Zoom out"
                 title="Zoom out"
                 onClick={() => setZoom((z) => Math.max(0.75, Number((z - 0.25).toFixed(2))))}
                 disabled={zoom <= 0.75}
               >
                 <MinusIcon width={16} height={16} />
               </button>
-              <span className="toolbar__zoom-label">{Math.round(zoom * 100)}%</span>
+              <span className="toolbar__zoom-label" aria-live="polite">
+                {Math.round(zoom * 100)}%
+              </span>
               <button
                 type="button"
                 className="icon-button icon-button--subtle"
+                aria-label="Zoom in"
                 title="Zoom in"
                 onClick={() => setZoom((z) => Math.min(1.25, Number((z + 0.25).toFixed(2))))}
                 disabled={zoom >= 1.25}
@@ -789,6 +795,8 @@ export function TimetablePage() {
                 type="button"
                 className={`button button--ghost button--sm ${dense ? 'button--active' : ''}`}
                 onClick={() => setDense((d) => !d)}
+                aria-pressed={dense}
+                aria-label="Toggle compact density"
                 title="Toggle compact density"
               >
                 Compact
@@ -796,16 +804,16 @@ export function TimetablePage() {
             </div>
 
             <div className="toolbar__group" aria-label="Export">
-              <button type="button" className="button button--ghost button--sm" onClick={() => window.print()} title="Print or save as PDF">
+              <button type="button" className="button button--ghost button--sm" onClick={() => window.print()} aria-label="Print or save as PDF" title="Print or save as PDF">
                 <PrintIcon width={14} height={14} /> Print
               </button>
-              <button type="button" className="button button--ghost button--sm" onClick={exportCsv} title="Download CSV">
+              <button type="button" className="button button--ghost button--sm" onClick={exportCsv} aria-label="Download CSV" title="Download CSV">
                 CSV
               </button>
-              <button type="button" className="button button--ghost button--sm" onClick={exportIcs} title="Download calendar file (.ics)">
+              <button type="button" className="button button--ghost button--sm" onClick={exportIcs} aria-label="Download calendar file (.ics)" title="Download calendar file (.ics)">
                 Calendar
               </button>
-              <button type="button" className="button button--ghost button--sm" onClick={exportPng} title="Download PNG image">
+              <button type="button" className="button button--ghost button--sm" onClick={exportPng} aria-label="Download PNG image" title="Download PNG image">
                 <DownloadIcon width={14} height={14} /> PNG
               </button>
             </div>
@@ -1222,12 +1230,23 @@ export function TimetablePage() {
         onCancel={() => setConfirmingDelete(null)}
       />
 
+      <ConfirmDialog
+        open={confirmPublish}
+        title="Publish this timetable?"
+        description={`Version ${version?.number ?? ''} becomes the live timetable for every class. Existing schedules are replaced. You can restore any earlier version from the Versions page.`}
+        confirmLabel={publishing ? 'Publishing…' : 'Publish timetable'}
+        destructive
+        onConfirm={handlePublish}
+        onCancel={() => setConfirmPublish(false)}
+      />
+
       {paletteOpen && (
         <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette">
           <div className="palette__panel">
             <input
               className="input palette__input"
               placeholder="Search pages, teachers, classes, rooms…"
+              aria-label="Command palette search"
               value={paletteQuery}
               onChange={(event) => setPaletteQuery(event.target.value)}
               autoFocus

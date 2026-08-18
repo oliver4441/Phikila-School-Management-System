@@ -17,6 +17,113 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: 'Viewer (read only)',
 }
 
+type RequestOptions = {
+  schools: { id: number; name: string }[]
+  roles: string[]
+}
+
+function RequestForm({
+  options,
+  loadingOptions,
+  role,
+  schoolId,
+  schoolName,
+  note,
+  errors,
+  submitting,
+  onChange,
+  onSubmit,
+}: {
+  options: RequestOptions | null
+  loadingOptions: boolean
+  role: string
+  schoolId: string
+  schoolName: string
+  note: string
+  errors: Record<string, string>
+  submitting: boolean
+  onChange: {
+    role: (value: string) => void
+    schoolId: (value: string) => void
+    schoolName: (value: string) => void
+    note: (value: string) => void
+  }
+  onSubmit: (event: FormEvent) => void
+}) {
+  return (
+    <form className="form" onSubmit={onSubmit} noValidate>
+      <div className="field">
+        <label className="field__label" htmlFor="req-role">
+          What is your role? <span className="field__required">(required)</span>
+        </label>
+        <p className="field__hint" id="req-role-hint">
+          This is a request. An administrator confirms what access you actually receive.
+        </p>
+        <select
+          id="req-role"
+          className="input input--select"
+          value={role}
+          aria-describedby="req-role-hint"
+          onChange={(event) => onChange.role(event.target.value)}
+        >
+          {(options?.roles ?? ['teacher']).map((value) => (
+            <option key={value} value={value}>
+              {ROLE_LABELS[value] ?? value}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label className="field__label" htmlFor="req-school">
+          Your school <span className="field__required">(required)</span>
+        </label>
+        <select
+          id="req-school"
+          className="input input--select"
+          value={schoolId}
+          disabled={loadingOptions}
+          onChange={(event) => onChange.schoolId(event.target.value)}
+          aria-invalid={errors.school ? true : undefined}
+        >
+          <option value="">Not listed — I will type the name</option>
+          {(options?.schools ?? []).map((school) => (
+            <option key={school.id} value={school.id}>
+              {school.name}
+            </option>
+          ))}
+        </select>
+        {loadingOptions && (
+          <p className="field__hint">Loading the school list…</p>
+        )}
+      </div>
+
+      {!schoolId && (
+        <Field
+          label="School name"
+          required
+          placeholder="e.g. Phikila Academy"
+          value={schoolName}
+          onChange={(event) => onChange.schoolName(event.target.value)}
+          error={errors.school}
+        />
+      )}
+
+      <Field
+        label="Anything else the administrator should know"
+        placeholder="e.g. I teach Form 3 Mathematics"
+        value={note}
+        onChange={(event) => onChange.note(event.target.value)}
+      />
+
+      <button className="button button--primary button--block" type="submit" disabled={submitting}>
+        {submitting && <Spinner label="Sending request" />}
+        {submitting ? 'Sending…' : 'Request access'}
+      </button>
+    </form>
+  )
+}
+
 /**
  * Shown to a signed-in account that has not yet been granted access.
  *
@@ -29,10 +136,8 @@ export function AwaitingApprovalPage() {
   const { session, reload } = usePlatformSession()
   const { notify } = useToast()
 
-  const [options, setOptions] = useState<{
-    schools: { id: number; name: string }[]
-    roles: string[]
-  } | null>(null)
+  const [options, setOptions] = useState<RequestOptions | null>(null)
+  const [loadingOptions, setLoadingOptions] = useState(true)
   const [role, setRole] = useState('teacher')
   const [schoolId, setSchoolId] = useState<string>('')
   const [schoolName, setSchoolName] = useState('')
@@ -58,6 +163,7 @@ export function AwaitingApprovalPage() {
         }
       })
       .catch(() => setOptions({ schools: [], roles: ['teacher'] }))
+      .finally(() => setLoadingOptions(false))
   }, [user])
 
   const request = session?.access_request
@@ -131,79 +237,24 @@ export function AwaitingApprovalPage() {
             'An administrator declined this request. Contact your school if you think this is a mistake.'}
         </Alert>
         <p className="form__note">You can submit a corrected request below.</p>
-        <RequestForm />
-      </AuthLayout>
-    )
-  }
-
-  function RequestForm() {
-    return (
-      <form className="form" onSubmit={submit} noValidate>
-        <div className="field">
-          <label className="field__label" htmlFor="req-role">
-            What is your role? <span className="field__required">(required)</span>
-          </label>
-          <p className="field__hint" id="req-role-hint">
-            This is a request. An administrator confirms what access you actually receive.
-          </p>
-          <select
-            id="req-role"
-            className="input input--select"
-            value={role}
-            aria-describedby="req-role-hint"
-            onChange={(event) => setRole(event.target.value)}
-          >
-            {(options?.roles ?? ['teacher']).map((value) => (
-              <option key={value} value={value}>
-                {ROLE_LABELS[value] ?? value}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label className="field__label" htmlFor="req-school">
-            Your school <span className="field__required">(required)</span>
-          </label>
-          <select
-            id="req-school"
-            className="input input--select"
-            value={schoolId}
-            onChange={(event) => setSchoolId(event.target.value)}
-            aria-invalid={errors.school ? true : undefined}
-          >
-            <option value="">Not listed — I will type the name</option>
-            {(options?.schools ?? []).map((school) => (
-              <option key={school.id} value={school.id}>
-                {school.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {!schoolId && (
-          <Field
-            label="School name"
-            required
-            placeholder="e.g. Phikila Academy"
-            value={schoolName}
-            onChange={(event) => setSchoolName(event.target.value)}
-            error={errors.school}
-          />
-        )}
-
-        <Field
-          label="Anything else the administrator should know"
-          placeholder="e.g. I teach Form 3 Mathematics"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
+        <RequestForm
+          options={options}
+          loadingOptions={loadingOptions}
+          role={role}
+          schoolId={schoolId}
+          schoolName={schoolName}
+          note={note}
+          errors={errors}
+          submitting={submitting}
+          onChange={{
+            role: setRole,
+            schoolId: setSchoolId,
+            schoolName: setSchoolName,
+            note: setNote,
+          }}
+          onSubmit={submit}
         />
-
-        <button className="button button--primary button--block" type="submit" disabled={submitting}>
-          {submitting && <Spinner label="Sending request" />}
-          {submitting ? 'Sending…' : 'Request access'}
-        </button>
-      </form>
+      </AuthLayout>
     )
   }
 
@@ -226,7 +277,23 @@ export function AwaitingApprovalPage() {
         Tell us which school you belong to and what you do there. A platform administrator
         reviews every request before any access is granted.
       </Alert>
-      <RequestForm />
+      <RequestForm
+        options={options}
+        loadingOptions={loadingOptions}
+        role={role}
+        schoolId={schoolId}
+        schoolName={schoolName}
+        note={note}
+        errors={errors}
+        submitting={submitting}
+        onChange={{
+          role: setRole,
+          schoolId: setSchoolId,
+          schoolName: setSchoolName,
+          note: setNote,
+        }}
+        onSubmit={submit}
+      />
     </AuthLayout>
   )
 }

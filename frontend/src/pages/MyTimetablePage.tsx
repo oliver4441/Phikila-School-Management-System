@@ -23,52 +23,33 @@ export function MyTimetablePage() {
   const [stale, setStale] = useState<number | null>(null)
   const [tab, setTab] = useState<'today' | 'week'>('today')
 
-  useEffect(() => {
-    let active = true
-    cachedFetch('mytt:options', async () => {
-      const [classes, teachers, me] = await Promise.all([
-        scheduling.classes(),
-        scheduling.teachers(),
-        scheduling.me(),
-      ])
-      return { classes, teachers, me }
-    })
-      .then((result) => {
-        if (!active) return
-        const { classes, teachers, me } = result.data
-        setOptions({ classes, teachers })
-        setTargetId((current) => {
-          if (current !== null) return current
-          // Teachers land on their own timetable, students on their class.
-          if (me.teacher_id) {
-            setScope('teacher')
-            return me.teacher_id
-          }
-          if (me.class_id) {
-            setScope('class')
-            return me.class_id
-          }
-          return classes[0]?.id ?? null
-        })
-      })
-      .catch(() => {
-        if (active) setError('Could not load your school data.')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-
   const load = useCallback(async () => {
-    if (!targetId) return
     setLoading(true)
     setError(null)
     try {
-      const result = await cachedFetch(`mytt:${scope}:${targetId}`, () =>
-        scheduling.view(scope, targetId),
+      let nextTarget = targetId
+      if (!options) {
+        const [classes, teachers, me] = await Promise.all([
+          scheduling.classes(),
+          scheduling.teachers(),
+          scheduling.me(),
+        ])
+        setOptions({ classes, teachers })
+        // Teachers land on their own timetable, students on their class.
+        if (me.teacher_id) {
+          setScope('teacher')
+          nextTarget = me.teacher_id
+        } else if (me.class_id) {
+          setScope('class')
+          nextTarget = me.class_id
+        } else {
+          nextTarget = classes[0]?.id ?? null
+        }
+        setTargetId(nextTarget)
+      }
+      if (nextTarget == null) return
+      const result = await cachedFetch(`mytt:${scope}:${nextTarget}`, () =>
+        scheduling.view(scope, nextTarget),
       )
       setView(result.data)
       setStale(result.stale ? result.savedAt : null)
@@ -77,7 +58,7 @@ export function MyTimetablePage() {
     } finally {
       setLoading(false)
     }
-  }, [scope, targetId])
+  }, [scope, targetId, options])
 
   useEffect(() => {
     void load()

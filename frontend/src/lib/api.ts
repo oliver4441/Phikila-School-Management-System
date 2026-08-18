@@ -18,6 +18,11 @@ export function friendlyApiError(error: unknown, action: string): string {
     if (error.status === 403) return `You do not have permission to ${action}.`
     if (error.status === 404) return 'That information has not been set up yet.'
     if (error.status === 422 || error.status === 400) return 'Some details were not accepted. Check the form and try again.'
+    // 501 endpoints are deliberate stubs; the backend returns a clear,
+    // user-facing detail explaining the feature is not available here.
+    if (error.status === 501 && error.message && error.message !== `Request failed (501)`) {
+      return error.message
+    }
     if (error.status >= 500) return `The server had a problem and could not ${action}.`
     return `We could not ${action}. Please try again.`
   }
@@ -75,15 +80,17 @@ export type Identity = {
 export type SchoolProfile = {
   id: number
   name: string
-  code?: string | null
-  county?: string | null
-  sub_county?: string | null
-  email?: string | null
-  phone?: string | null
   motto?: string | null
-  principal_name?: string | null
-  established_year?: number | null
-  is_active?: boolean | null
+  slug?: string | null
+  establishment_year?: number | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  timezone?: string | null
+  academic_year?: string | null
+  term?: string | null
+  session_count?: number | null
+  status?: string | null
 }
 
 export type AcademicYear = {
@@ -92,8 +99,7 @@ export type AcademicYear = {
   start_date: string
   end_date: string
   is_current?: boolean | null
-  status?: string | null
-  school_id: number
+  school_id?: number
 }
 
 export type Term = {
@@ -101,18 +107,37 @@ export type Term = {
   name: string
   start_date?: string | null
   end_date?: string | null
-  is_current: boolean
-  academic_year_id: number
-  school_id: number
+  year_id?: number | null
+  school_id?: number
+}
+
+export type TermStatus = 'current' | 'upcoming' | 'completed'
+
+/** Derives a term's status from its date range, since terms carry no flag. */
+export function termStatus(term: Term): TermStatus {
+  const today = new Date()
+  const start = term.start_date ? new Date(term.start_date) : null
+  const end = term.end_date ? new Date(term.end_date) : null
+  if (start && end && today >= start && today <= end) return 'current'
+  if (end && today > end) return 'completed'
+  return 'upcoming'
+}
+
+export function yearStatus(year: AcademicYear): TermStatus {
+  if (year.is_current) return 'current'
+  const today = new Date()
+  const start = year.start_date ? new Date(year.start_date) : null
+  const end = year.end_date ? new Date(year.end_date) : null
+  if (end && today > end) return 'completed'
+  if (start && today < start) return 'upcoming'
+  return 'upcoming'
 }
 
 export type Level = {
   id: number
   name: string
-  code: string
-  display_order: number
-  status?: boolean | null
-  school_id: number
+  description?: string | null
+  sort_order?: number
 }
 
 export const api = {

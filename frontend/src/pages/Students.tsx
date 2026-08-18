@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
-import { Badge, EmptyState, LoadingBlock } from '../components/States'
+import { Badge, EmptyState, ErrorState, LoadingBlock } from '../components/States'
 import { friendlyApiError } from '../lib/api'
+import { useToast } from '../components/Toast'
 import { students, type Student, type StudentListResponse } from '../lib/students'
 
 export default function StudentsPage() {
@@ -55,33 +56,45 @@ export default function StudentsPage() {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="field" style={{ flex: '1 1 16rem' }}>
+          <label className="visually-hidden" htmlFor="student-search">
+            Search students
+          </label>
           <input
+            id="student-search"
             className="input"
             placeholder="Search by name or admission number…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
-        <select
-          className="input"
-          style={{ width: '10rem' }}
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-        >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="graduated">Graduated</option>
-          <option value="transferred">Transferred</option>
-          <option value="suspended">Suspended</option>
-          <option value="withdrawn">Withdrawn</option>
-        </select>
+        <div className="field">
+          <label className="visually-hidden" htmlFor="student-status">
+            Filter by status
+          </label>
+          <select
+            id="student-status"
+            className="input"
+            style={{ width: '10rem' }}
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+          >
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="graduated">Graduated</option>
+            <option value="transferred">Transferred</option>
+            <option value="suspended">Suspended</option>
+            <option value="withdrawn">Withdrawn</option>
+          </select>
+        </div>
       </div>
 
       {/* Table */}
-      {loading ? (
+      {error ? (
+        <ErrorState title="Students could not load" message={error} onRetry={load} retryLabel="Retry" />
+      ) : loading ? (
         <LoadingBlock label="Loading students" rows={5} />
       ) : !data?.items.length ? (
         <EmptyState title="No students found" description={search ? 'Try a different search.' : 'Admit your first student to get started.'} />
@@ -142,12 +155,14 @@ export default function StudentsPage() {
 
 /* ---- Create form ---- */
 function StudentForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
+  const { notify } = useToast()
   const [form, setForm] = useState({ admission_number: '', first_name: '', last_name: '', gender: '', date_of_birth: '' })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitting) return
     setSubmitting(true)
     setError(null)
     try {
@@ -156,6 +171,7 @@ function StudentForm({ onCreated, onCancel }: { onCreated: () => void; onCancel:
         date_of_birth: form.date_of_birth || undefined,
         guardians: [],
       })
+      notify('Student admitted.', 'success')
       onCreated()
     } catch (err) {
       setError(friendlyApiError(err, 'admit student'))
@@ -171,30 +187,30 @@ function StudentForm({ onCreated, onCancel }: { onCreated: () => void; onCancel:
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
           <div className="field" style={{ flex: '1 1 10rem' }}>
-            <label className="field__label">Admission Number *</label>
-            <input className="input" required value={form.admission_number} onChange={(e) => setForm({ ...form, admission_number: e.target.value })} />
+            <label className="field__label" htmlFor="stu-adm-no">Admission Number *</label>
+            <input id="stu-adm-no" className="input" required value={form.admission_number} onChange={(e) => setForm({ ...form, admission_number: e.target.value })} />
           </div>
           <div className="field" style={{ flex: '1 1 10rem' }}>
-            <label className="field__label">First Name *</label>
-            <input className="input" required value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+            <label className="field__label" htmlFor="stu-first">First Name *</label>
+            <input id="stu-first" className="input" required value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
           </div>
           <div className="field" style={{ flex: '1 1 10rem' }}>
-            <label className="field__label">Last Name *</label>
-            <input className="input" required value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+            <label className="field__label" htmlFor="stu-last">Last Name *</label>
+            <input id="stu-last" className="input" required value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
           <div className="field" style={{ flex: '1 1 10rem' }}>
-            <label className="field__label">Gender</label>
-            <select className="input" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            <label className="field__label" htmlFor="stu-gender">Gender</label>
+            <select id="stu-gender" className="input" value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
               <option value="">Select…</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
             </select>
           </div>
           <div className="field" style={{ flex: '1 1 10rem' }}>
-            <label className="field__label">Date of Birth</label>
-            <input className="input" type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
+            <label className="field__label" htmlFor="stu-dob">Date of Birth</label>
+            <input id="stu-dob" className="input" type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
