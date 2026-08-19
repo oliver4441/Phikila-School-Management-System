@@ -1,4 +1,5 @@
 import { getStoredSession } from './authSession'
+import { getActiveSchoolId } from './schoolContext'
 
 const apiUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -53,6 +54,8 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, authenti
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+  const schoolId = getActiveSchoolId()
+  if (schoolId != null) headers.set('X-School-Id', String(schoolId))
   if (authenticated) {
     const session = getStoredSession()
     if (!session) throw new ApiError('Please sign in again.', 401)
