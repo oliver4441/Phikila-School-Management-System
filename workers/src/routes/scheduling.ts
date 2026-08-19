@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { createSql } from '../lib/db'
-import { insertRow, deleteRowById } from '../lib/crud'
-import { requireAuth } from '../lib/auth'
+import { insertRow } from '../lib/crud'
+import { resolveTenant, requireWrite, tenantSchoolId } from '../lib/tenancy'
 import { jsonError } from '../lib/http'
 import type { Bindings } from '../lib/env'
 
@@ -80,21 +80,22 @@ async function nextNumericId(db: ReturnType<typeof createSql>, table: string): P
   return String(r?.n ?? 1)
 }
 
-async function latestVersion(db: ReturnType<typeof createSql>): Promise<Record<string, unknown> | null> {
-  const rows = await db.query(`${VERSION_SELECT} order by is_current desc, published_at desc nulls last, created_at desc limit 1`)
+async function latestVersion(db: ReturnType<typeof createSql>, sid: number): Promise<Record<string, unknown> | null> {
+  const rows = await db.query(`${VERSION_SELECT} where school_id = ${sid} order by is_current desc, published_at desc nulls last, created_at desc limit 1`)
   return (rows[0] as Record<string, unknown>) ?? null
 }
 
 schedulingRoutes.get('/me', async (c) => {
-  const { error, user } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
-  const admins = await db.query(`select role from tt_platform_admins where user_id = $1`, [user!.id])
-  const role = admins[0]?.role === 'super_admin' ? 'super_admin' : admins.length ? 'admin' : 'viewer'
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const ctx = ten.ctx
+  const isAdmin = ten.ctx.role === 'admin' || ten.ctx.isSuperAdmin
+  const role = ten.ctx.isSuperAdmin ? 'super_admin' : isAdmin ? 'admin' : ten.ctx.role
   return c.json({
-    user_id: user!.id,
-    email: user!.email,
-    school_id: 1,
+    user_id: ctx.user.id,
+    email: ctx.user.email,
+    school_id: ctx.school?.id ?? null,
     role,
     teacher_id: null,
     class_id: null,
@@ -104,51 +105,58 @@ schedulingRoutes.get('/me', async (c) => {
 
 // Calendar
 schedulingRoutes.get('/calendar', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const days = await db.query(
-    `select id, day_of_week as index, name, coalesce(is_active, true) as is_active from tt_days order by day_of_week`,
+    `select id, day_of_week as index, name, coalesce(is_active, true) as is_active from tt_days where school_id = ${sid} order by day_of_week`,
   )
   const periods = await db.query(
     `select id, coalesce(sort_index, id) as index, name, start_time, end_time,
             coalesce(is_teaching, not coalesce(is_break, false)) as is_teaching
-     from tt_periods order by index`,
+     from tt_periods where school_id = ${sid} order by index`,
   )
   return c.json({ days, periods })
 })
 
 schedulingRoutes.put('/calendar', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const days = Array.isArray((body as Record<string, unknown>).days) ? ((body as Record<string, unknown>).days as Record<string, unknown>[]) : []
   const periods = Array.isArray((body as Record<string, unknown>).periods) ? ((body as Record<string, unknown>).periods as Record<string, unknown>[]) : []
   try {
-    await db.query(`delete from tt_days`)
+    await db.query(`delete from tt_days where school_id = ${sid}`)
     for (const d of days) {
-      await db.query(`insert into tt_days (name, day_of_week, is_active) values ($1, $2, $3)`, [
+      await db.query(`insert into tt_days (school_id, name, day_of_week, is_active) values ($1, $2, $3, $4)`, [
+        sid,
         d.name,
         d.index ?? 0,
         d.is_active ?? true,
       ])
     }
-    await db.query(`delete from tt_periods`)
+    await db.query(`delete from tt_periods where school_id = ${sid}`)
     for (const p of periods) {
       await db.query(
-        `insert into tt_periods (name, start_time, end_time, sort_index, is_teaching, is_break) values ($1, $2, $3, $4, $5, $6)`,
-        [p.name, p.start_time ?? null, p.end_time ?? null, p.index ?? 0, p.is_teaching ?? true, !(p.is_teaching ?? true)],
+        `insert into tt_periods (school_id, name, start_time, end_time, sort_index, is_teaching, is_break) values ($1, $2, $3, $4, $5, $6, $7)`,
+        [sid, p.name, p.start_time ?? null, p.end_time ?? null, p.index ?? 0, p.is_teaching ?? true, !(p.is_teaching ?? true)],
       )
     }
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
   }
-  const daysOut = await db.query(`select id, day_of_week as index, name, coalesce(is_active, true) as is_active from tt_days order by day_of_week`)
+  const daysOut = await db.query(`select id, day_of_week as index, name, coalesce(is_active, true) as is_active from tt_days where school_id = ${sid} order by day_of_week`)
   const periodsOut = await db.query(
     `select id, coalesce(sort_index, id) as index, name, start_time, end_time,
             coalesce(is_teaching, not coalesce(is_break, false)) as is_teaching
-     from tt_periods order by index`,
+     from tt_periods where school_id = ${sid} order by index`,
   )
   return c.json({ days: daysOut, periods: periodsOut })
 })
@@ -163,23 +171,31 @@ const resourceDefs: { resource: string; table: string; select: string; allowed: 
 
 for (const { resource, table, select, allowed } of resourceDefs) {
   schedulingRoutes.get(`/${resource}`, async (c) => {
-    const { error } = requireAuth(c as never)
-    if (error) return error
-    const rows = await createSql(c.env).query(`${select} order by id`)
+    const db = createSql(c.env)
+    const ten = await resolveTenant(c, db)
+    if ('error' in ten) return ten.error
+    const sid = tenantSchoolId(ten.ctx)
+    if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+    const rows = await db.query(`${select} where school_id = ${sid} order by id`)
     return c.json(rows)
   })
 
   schedulingRoutes.post(`/${resource}`, async (c) => {
-    const { error } = requireAuth(c as never)
-    if (error) return error
-    const body = await c.req.json().catch(() => ({}))
     const db = createSql(c.env)
+    const ten = await resolveTenant(c, db)
+    if ('error' in ten) return ten.error
+    const sid = tenantSchoolId(ten.ctx)
+    if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+    const w = requireWrite(ten.ctx)
+    if ('error' in w) return w.error
+    const body = await c.req.json().catch(() => ({}))
     const data: Record<string, unknown> = {}
     for (const k of allowed) if ((body as Record<string, unknown>)[k] !== undefined) data[k] = (body as Record<string, unknown>)[k]
     if (!data.name) return jsonError(c, 'name is required.', 400)
+    data.school_id = sid
     try {
       const row = await insertRow(db, table, data)
-      const [out] = await db.query(`${select} where id = $1`, [row.id])
+      const [out] = await db.query(`${select} where id = $1 and school_id = ${sid}`, [row.id])
       return c.json(out, 201)
     } catch (err) {
       return jsonError(c, (err as Error).message, 400)
@@ -187,37 +203,49 @@ for (const { resource, table, select, allowed } of resourceDefs) {
   })
 
   schedulingRoutes.put(`/${resource}/:id`, async (c) => {
-    const { error } = requireAuth(c as never)
-    if (error) return error
-    const body = await c.req.json().catch(() => ({}))
     const db = createSql(c.env)
+    const ten = await resolveTenant(c, db)
+    if ('error' in ten) return ten.error
+    const sid = tenantSchoolId(ten.ctx)
+    if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+    const w = requireWrite(ten.ctx)
+    if ('error' in w) return w.error
+    const body = await c.req.json().catch(() => ({}))
     const data: Record<string, unknown> = {}
     for (const k of allowed) if ((body as Record<string, unknown>)[k] !== undefined) data[k] = (body as Record<string, unknown>)[k]
     if (!Object.keys(data).length) return c.json({ detail: 'No fields to update.' }, 400)
+    data.school_id = sid
     const keys = Object.keys(data)
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ')
     const rows = await db.query(
-      `update ${table} set ${sets}, updated_at = now() where id = $${keys.length + 1} returning *`,
+      `update ${table} set ${sets}, updated_at = now() where id = $${keys.length + 1} and school_id = ${sid} returning *`,
       [...keys.map((k) => data[k]), c.req.param('id')],
     )
     if (!rows[0]) return c.json({ detail: 'Not found.' }, 404)
-    const [out] = await db.query(`${select} where id = $1`, [c.req.param('id')])
+    const [out] = await db.query(`${select} where id = $1 and school_id = ${sid}`, [c.req.param('id')])
     return c.json(out)
   })
 
   schedulingRoutes.delete(`/${resource}/:id`, async (c) => {
-    const { error } = requireAuth(c as never)
-    if (error) return error
-    await deleteRowById(createSql(c.env), table, c.req.param('id'))
+    const db = createSql(c.env)
+    const ten = await resolveTenant(c, db)
+    if ('error' in ten) return ten.error
+    const sid = tenantSchoolId(ten.ctx)
+    if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+    const w = requireWrite(ten.ctx)
+    if ('error' in w) return w.error
+    await db.query(`delete from ${table} where id = $1 and school_id = ${sid}`, [c.req.param('id')])
     return c.body(null, 204)
   })
 }
 
 // Requirements
 schedulingRoutes.get('/requirements', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const rows = (await db.query(
     `select r.id, r.class_id, r.subject_id, r.teacher_id, r.room_id,
             r.periods_per_week, coalesce(r.double_periods, 0) as double_periods,
@@ -227,26 +255,32 @@ schedulingRoutes.get('/requirements', async (c) => {
      left join tt_subjects s on s.id = r.subject_id
      left join tt_teachers t on t.id = r.teacher_id
      left join tt_rooms rm on rm.id = r.room_id
+     where r.school_id = ${sid}
      order by r.created_at`,
   )) as Record<string, unknown>[]
   return c.json(rows.map((r) => ({ ...r, id: Number(r.id) })))
 })
 
 schedulingRoutes.post('/requirements', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if ((body as Record<string, unknown>).class_id == null || (body as Record<string, unknown>).subject_id == null) {
     return jsonError(c, 'class_id and subject_id are required.', 400)
   }
   try {
     const id = await nextNumericId(db, 'tt_lesson_requirements')
     await db.query(
-      `insert into tt_lesson_requirements (id, class_id, subject_id, teacher_id, room_id, periods_per_week, double_periods, room_type)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `insert into tt_lesson_requirements (id, school_id, class_id, subject_id, teacher_id, room_id, periods_per_week, double_periods, room_type)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         id,
+        sid,
         (body as Record<string, unknown>).class_id,
         (body as Record<string, unknown>).subject_id,
         (body as Record<string, unknown>).teacher_id ?? null,
@@ -265,7 +299,7 @@ schedulingRoutes.post('/requirements', async (c) => {
        left join tt_subjects s on s.id = r.subject_id
        left join tt_teachers t on t.id = r.teacher_id
        left join tt_rooms rm on rm.id = r.room_id
-       where r.id = $1`,
+       where r.id = $1 and r.school_id = ${sid}`,
       [id],
     )
     return c.json({ ...rows[0], id: Number(id) }, 201)
@@ -275,28 +309,40 @@ schedulingRoutes.post('/requirements', async (c) => {
 })
 
 schedulingRoutes.delete('/requirements/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  await createSql(c.env).query(`delete from tt_lesson_requirements where id = $1`, [c.req.param('id')])
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  await db.query(`delete from tt_lesson_requirements where id = $1 and school_id = ${sid}`, [c.req.param('id')])
   return c.body(null, 204)
 })
 
 // Constraints
 schedulingRoutes.get('/constraints', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`select * from tt_constraints order by id`)
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`select * from tt_constraints where school_id = ${sid} order by id`)
   return c.json(rows)
 })
 
 schedulingRoutes.post('/constraints', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if (!(body as Record<string, unknown>).type) return jsonError(c, 'type is required.', 400)
   try {
-    const row = await insertRow(db, 'tt_constraints', body as Record<string, unknown>)
+    const row = await insertRow(db, 'tt_constraints', { school_id: sid, ...(body as Record<string, unknown>) })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -304,42 +350,60 @@ schedulingRoutes.post('/constraints', async (c) => {
 })
 
 schedulingRoutes.delete('/constraints/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  await deleteRowById(createSql(c.env), 'tt_constraints', c.req.param('id'))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  await db.query(`delete from tt_constraints where id = $1 and school_id = ${sid}`, [c.req.param('id')])
   return c.body(null, 204)
 })
 
 // Versions
 schedulingRoutes.get('/versions', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`${VERSION_SELECT} order by created_at desc`)
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`${VERSION_SELECT} where school_id = ${sid} order by created_at desc`)
   return c.json(rows)
 })
 
 schedulingRoutes.get('/versions/current', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const version = await latestVersion(createSql(c.env))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const version = await latestVersion(db, sid)
   return c.json(version)
 })
 
 schedulingRoutes.get('/versions/:versionId/lessons', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
-    `${LESSON_SELECT} where l.version_id = $1 order by day_index, period_index, id`,
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
+    `${LESSON_SELECT} where l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid}) order by day_index, period_index, id`,
     [c.req.param('versionId')],
   )
   return c.json(rows)
 })
 
 schedulingRoutes.post('/versions/:versionId/lessons', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const versionId = c.req.param('versionId')
   if ((body as Record<string, unknown>).requirement_id == null) {
     return jsonError(c, 'requirement_id is required.', 400)
@@ -348,7 +412,10 @@ schedulingRoutes.post('/versions/:versionId/lessons', async (c) => {
     const [row] = await db.query(
       `insert into tt_lessons (version_id, requirement_id, class_id, subject_id, teacher_id, room_id, day_index, period_index, duration)
        select $1, $2, r.class_id, r.subject_id, r.teacher_id, r.room_id, $3, $4, $5
-       from tt_lesson_requirements r where r.id = $2 returning *`,
+       from tt_lesson_requirements r
+       where r.id = $2 and r.school_id = ${sid}
+         and $1 in (select id from tt_versions where school_id = ${sid})
+       returning *`,
       [
         versionId,
         String((body as Record<string, unknown>).requirement_id),
@@ -358,7 +425,7 @@ schedulingRoutes.post('/versions/:versionId/lessons', async (c) => {
       ],
     )
     if (!row) return jsonError(c, 'Requirement not found.', 404)
-    const [out] = await db.query(`${LESSON_SELECT} where l.id = $1`, [row.id])
+    const [out] = await db.query(`${LESSON_SELECT} where l.id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})`, [row.id])
     return c.json(out, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -368,15 +435,17 @@ schedulingRoutes.post('/versions/:versionId/lessons', async (c) => {
 async function computeConflicts(
   db: ReturnType<typeof createSql>,
   versionId: string,
+  sid: number,
 ): Promise<Record<string, unknown>[]> {
   const lessons = (await db.query(
     `select l.id, l.class_id, l.teacher_id, l.room_id,
             coalesce(l.day_index, 0) as day_index, coalesce(l.period_index, l.period, 0) as period_index
-     from tt_lessons l where l.version_id = $1`,
+     from tt_lessons l
+     where l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})`,
     [versionId],
   )) as Record<string, unknown>[]
   const classNames = new Map<number, string>()
-  for (const r of (await db.query(`select id, name from tt_classes`)) as Record<string, unknown>[]) {
+  for (const r of (await db.query(`select id, name from tt_classes where school_id = ${sid}`)) as Record<string, unknown>[]) {
     classNames.set(Number(r.id), String(r.name))
   }
   const slots = new Map<string, Record<string, unknown>[]>()
@@ -420,16 +489,21 @@ async function computeConflicts(
 }
 
 schedulingRoutes.get('/versions/:versionId/conflicts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const conflicts = await computeConflicts(createSql(c.env), c.req.param('versionId'))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const conflicts = await computeConflicts(db, c.req.param('versionId'), sid)
   return c.json(conflicts)
 })
 
 schedulingRoutes.get('/versions/:versionId/unassigned', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const versionId = c.req.param('versionId')
   const reqs = (await db.query(
     `select r.id, r.subject_id, r.class_id, r.teacher_id, r.room_id, r.periods_per_week,
@@ -441,11 +515,14 @@ schedulingRoutes.get('/versions/:versionId/unassigned', async (c) => {
      left join tt_classes c on c.id = r.class_id
      left join tt_teachers t on t.id = r.teacher_id
      left join tt_rooms rm on rm.id = r.room_id
+     where r.school_id = ${sid}
      order by r.created_at`,
   )) as Record<string, unknown>[]
   const placedRows = (await db.query(
     `select l.requirement_id, count(*)::int as n
-     from tt_lessons l where l.version_id = $1 and l.requirement_id ~ '^[0-9]+$'
+     from tt_lessons l
+     where l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})
+       and l.requirement_id ~ '^[0-9]+$'
      group by l.requirement_id`,
     [versionId],
   )) as Record<string, unknown>[]
@@ -474,12 +551,19 @@ schedulingRoutes.get('/versions/:versionId/unassigned', async (c) => {
 })
 
 schedulingRoutes.post('/versions/:versionId/assign-rooms', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const rows = await db.query(
     `update tt_lessons l set room_id = r.room_id, updated_at = now()
      from tt_lesson_requirements r
-     where r.id = l.requirement_id and l.room_id is null and r.room_id is not null and l.version_id = $1
+     where r.id = l.requirement_id and r.school_id = ${sid}
+       and l.room_id is null and r.room_id is not null
+       and l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})
      returning l.id`,
     [c.req.param('versionId')],
   )
@@ -487,55 +571,71 @@ schedulingRoutes.post('/versions/:versionId/assign-rooms', async (c) => {
 })
 
 schedulingRoutes.post('/versions/:versionId/publish', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const versionId = c.req.param('versionId')
-  await db.query(`update tt_versions set is_current = false where id <> $1`, [versionId])
+  await db.query(`update tt_versions set is_current = false where id <> $1 and school_id = ${sid}`, [versionId])
   const rows = await db.query(
     `update tt_versions set status = 'published', is_current = true,
             published_at = coalesce(published_at, now()), updated_at = now()
-     where id = $1 returning *`,
+     where id = $1 and school_id = ${sid} returning *`,
     [versionId],
   )
   if (!rows[0]) return c.json({ detail: 'Version not found.' }, 404)
-  const [out] = await db.query(`${VERSION_SELECT} where id = $1`, [versionId])
+  const [out] = await db.query(`${VERSION_SELECT} where id = $1 and school_id = ${sid}`, [versionId])
   return c.json(out)
 })
 
 schedulingRoutes.post('/versions/:versionId/restore', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const versionId = c.req.param('versionId')
-  await db.query(`update tt_versions set is_current = false where id <> $1`, [versionId])
+  await db.query(`update tt_versions set is_current = false where id <> $1 and school_id = ${sid}`, [versionId])
   const rows = await db.query(
     `update tt_versions set is_current = true, updated_at = now()
-     where id = $1 returning *`,
+     where id = $1 and school_id = ${sid} returning *`,
     [versionId],
   )
   if (!rows[0]) return c.json({ detail: 'Version not found.' }, 404)
-  const [out] = await db.query(`${VERSION_SELECT} where id = $1`, [versionId])
+  const [out] = await db.query(`${VERSION_SELECT} where id = $1 and school_id = ${sid}`, [versionId])
   return c.json(out)
 })
 
 schedulingRoutes.delete('/versions/:versionId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const versionId = c.req.param('versionId')
-  await db.query(`delete from tt_lessons where version_id = $1`, [versionId])
-  const rows = await db.query(`delete from tt_versions where id = $1 returning id`, [versionId])
+  await db.query(`delete from tt_lessons where version_id = $1 and version_id in (select id from tt_versions where school_id = ${sid})`, [versionId])
+  const rows = await db.query(`delete from tt_versions where id = $1 and school_id = ${sid} returning id`, [versionId])
   if (!rows[0]) return c.json({ detail: 'Version not found.' }, 404)
   return c.body(null, 204)
 })
 
 // Lessons
 schedulingRoutes.patch('/lessons/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const allowed = ['day_index', 'period_index', 'duration', 'teacher_id', 'class_id', 'subject_id', 'room_id', 'is_locked']
   const data: Record<string, unknown> = {}
   for (const k of allowed) if ((body as Record<string, unknown>)[k] !== undefined) data[k] = (body as Record<string, unknown>)[k]
@@ -543,60 +643,96 @@ schedulingRoutes.patch('/lessons/:id', async (c) => {
   const keys = Object.keys(data)
   const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ')
   const rows = await db.query(
-    `update tt_lessons set ${sets}, updated_at = now() where id = $${keys.length + 1} returning id`,
+    `update tt_lessons set ${sets}, updated_at = now()
+     where id = $${keys.length + 1} and version_id in (select id from tt_versions where school_id = ${sid})
+     returning id`,
     [...keys.map((k) => data[k]), c.req.param('id')],
   )
   if (!rows[0]) return c.json({ detail: 'Lesson not found.' }, 404)
-  const [out] = await db.query(`${LESSON_SELECT} where l.id = $1`, [c.req.param('id')])
+  const [out] = await db.query(`${LESSON_SELECT} where l.id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})`, [c.req.param('id')])
   return c.json(out)
 })
 
 schedulingRoutes.post('/lessons/:id/duplicate', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const rows = await db.query(
     `insert into tt_lessons (version_id, requirement_id, class_id, subject_id, teacher_id, room_id, day_index, period_index, duration, is_locked)
      select version_id, requirement_id, class_id, subject_id, teacher_id, room_id, day_index, period_index, duration, is_locked
-     from tt_lessons where id = $1 returning id`,
+     from tt_lessons
+     where id = $1 and version_id in (select id from tt_versions where school_id = ${sid})
+     returning id`,
     [c.req.param('id')],
   )
   if (!rows[0]) return c.json({ detail: 'Lesson not found.' }, 404)
-  const [out] = await db.query(`${LESSON_SELECT} where l.id = $1`, [rows[0].id])
+  const [out] = await db.query(`${LESSON_SELECT} where l.id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})`, [rows[0].id])
   return c.json(out, 201)
 })
 
 schedulingRoutes.delete('/lessons/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`delete from tt_lessons where id = $1 returning id`, [c.req.param('id')])
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const rows = await db.query(
+    `delete from tt_lessons where id = $1 and version_id in (select id from tt_versions where school_id = ${sid}) returning id`,
+    [c.req.param('id')],
+  )
   if (!rows[0]) return c.json({ detail: 'Lesson not found.' }, 404)
   return c.body(null, 204)
 })
 
 schedulingRoutes.post('/lessons/:id/explain', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })
 
 schedulingRoutes.get('/lessons/:id/suggestions', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })
 
 // Solver
 schedulingRoutes.post('/solver/generate', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })
 
 schedulingRoutes.get('/solver/jobs/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`select * from tt_solver_jobs where id = $1`, [c.req.param('id')])
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
+    `select * from tt_solver_jobs
+     where id = $1 and version_id in (select id from tt_versions where school_id = ${sid})`,
+    [c.req.param('id')],
+  )
   if (!rows[0]) return c.json({ detail: 'Job not found.' }, 404)
   const j = rows[0]
   return c.json({
@@ -612,28 +748,41 @@ schedulingRoutes.get('/solver/jobs/:id', async (c) => {
 })
 
 schedulingRoutes.post('/solver/jobs/:id/cancel', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })
 
 // Dashboard
 schedulingRoutes.get('/dashboard', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
-  const [t] = await db.query(`select count(*)::int as n from tt_teachers`)
-  const [s] = await db.query(`select count(*)::int as n from tt_subjects`)
-  const [cl] = await db.query(`select count(*)::int as n from tt_classes`)
-  const [rm] = await db.query(`select count(*)::int as n from tt_rooms`)
-  const [req] = await db.query(`select coalesce(sum(periods_per_week), 0)::int as n from tt_lesson_requirements`)
-  const version = await latestVersion(db)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const [t] = await db.query(`select count(*)::int as n from tt_teachers where school_id = ${sid}`)
+  const [s] = await db.query(`select count(*)::int as n from tt_subjects where school_id = ${sid}`)
+  const [cl] = await db.query(`select count(*)::int as n from tt_classes where school_id = ${sid}`)
+  const [rm] = await db.query(`select count(*)::int as n from tt_rooms where school_id = ${sid}`)
+  const [req] = await db.query(`select coalesce(sum(periods_per_week), 0)::int as n from tt_lesson_requirements where school_id = ${sid}`)
+  const version = await latestVersion(db, sid)
   const versionId = version ? String(version.id) : '0'
-  const [sched] = await db.query(`select count(*)::int as n from tt_lessons where version_id = $1`, [versionId])
-  const conflicts = version ? await computeConflicts(db, versionId) : []
+  const [sched] = await db.query(`select count(*)::int as n from tt_lessons where version_id = $1 and version_id in (select id from tt_versions where school_id = ${sid})`, [versionId])
+  const conflicts = version ? await computeConflicts(db, versionId, sid) : []
   const hard = conflicts.filter((x) => x.severity === 'hard').length
   const soft = conflicts.filter((x) => x.severity === 'soft').length
-  const recent = (await db.query(`${AUDIT_SELECT} order by a.created_at desc limit 8`)) as Record<string, unknown>[]
+  const recent = (await db.query(
+    `${AUDIT_SELECT} where a.entity_id ~ '^[0-9]+$' and a.entity_id::bigint in (
+       select v.id from tt_versions v where v.school_id = ${sid}
+       union
+       select l.id from tt_lessons l where l.version_id in (select id from tt_versions where school_id = ${sid})
+     ) order by a.created_at desc limit 8`,
+  )) as Record<string, unknown>[]
   return c.json({
     counts: {
       teachers: t?.n ?? 0,
@@ -661,13 +810,15 @@ schedulingRoutes.get('/dashboard', async (c) => {
 
 // Analytics
 schedulingRoutes.get('/analytics', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
-  const version = await latestVersion(db)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const version = await latestVersion(db, sid)
   const versionId = version ? String(version.id) : '0'
   const [totalPeriodsRow] = await db.query(
-    `select count(*)::int as n from tt_periods where coalesce(is_teaching, not coalesce(is_break, false))`,
+    `select count(*)::int as n from tt_periods where school_id = ${sid} and coalesce(is_teaching, not coalesce(is_break, false))`,
   )
   const totalPeriods = totalPeriodsRow?.n ?? 0
 
@@ -676,6 +827,8 @@ schedulingRoutes.get('/analytics', async (c) => {
             count(l.id)::int as lessons
      from tt_teachers t
      left join tt_lessons l on l.teacher_id = t.id and l.version_id = $1
+          and l.version_id in (select id from tt_versions where school_id = ${sid})
+     where t.school_id = ${sid}
      group by t.id order by t.name`,
     [versionId],
   )) as Record<string, unknown>[]
@@ -684,6 +837,8 @@ schedulingRoutes.get('/analytics', async (c) => {
             count(l.id)::int as used
      from tt_rooms r
      left join tt_lessons l on l.room_id = r.id and l.version_id = $1
+          and l.version_id in (select id from tt_versions where school_id = ${sid})
+     where r.school_id = ${sid}
      group by r.id order by r.name`,
     [versionId],
   )) as Record<string, unknown>[]
@@ -692,6 +847,8 @@ schedulingRoutes.get('/analytics', async (c) => {
             coalesce(max(l.day_index), 0) as busiest_day, coalesce(min(l.day_index), 0) as quietest_day
      from tt_classes c
      left join tt_lessons l on l.class_id = c.id and l.version_id = $1
+          and l.version_id in (select id from tt_versions where school_id = ${sid})
+     where c.school_id = ${sid}
      group by c.id order by c.name`,
     [versionId],
   )) as Record<string, unknown>[]
@@ -737,11 +894,18 @@ schedulingRoutes.get('/analytics', async (c) => {
 
 // Audit
 schedulingRoutes.get('/audit', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '50', 10) || 50, 1), 200)
-  const rows = (await createSql(c.env).query(
-    `${AUDIT_SELECT} order by a.created_at desc limit ${limit}`,
+  const rows = (await db.query(
+    `${AUDIT_SELECT} where a.entity_id ~ '^[0-9]+$' and a.entity_id::bigint in (
+       select v.id from tt_versions v where v.school_id = ${sid}
+       union
+       select l.id from tt_lessons l where l.version_id in (select id from tt_versions where school_id = ${sid})
+     ) order by a.created_at desc limit ${limit}`,
   )) as Record<string, unknown>[]
   return c.json(
     rows.map((r) => ({
@@ -760,29 +924,31 @@ schedulingRoutes.get('/audit', async (c) => {
 
 // Timetable view
 schedulingRoutes.get('/timetable/view', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const scope = c.req.query('scope')
   const targetId = c.req.query('target_id')
   const days = await db.query(
-    `select day_of_week as index, name from tt_days where coalesce(is_active, true) order by day_of_week`,
+    `select day_of_week as index, name from tt_days where school_id = ${sid} and coalesce(is_active, true) order by day_of_week`,
   )
   const periods = await db.query(
     `select id, coalesce(sort_index, id) as index, name, start_time, end_time,
             coalesce(is_teaching, not coalesce(is_break, false)) as is_teaching
-     from tt_periods order by index`,
+     from tt_periods where school_id = ${sid} order by index`,
   )
-  const version = await latestVersion(db)
+  const version = await latestVersion(db, sid)
   let targetName: string | null = null
   if (targetId && (scope === 'class' || scope === 'teacher' || scope === 'room')) {
     const table = scope === 'class' ? 'tt_classes' : scope === 'teacher' ? 'tt_teachers' : 'tt_rooms'
-    const rows = await db.query(`select name from ${table} where id = $1`, [targetId])
+    const rows = await db.query(`select name from ${table} where id = $1 and school_id = ${sid}`, [targetId])
     targetName = rows[0]?.name ?? null
   }
   let lessons: Record<string, unknown>[] = []
   if (version) {
-    let where = 'l.version_id = $1'
+    let where = 'l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})'
     const params: string[] = [String(version.id)]
     if (targetId && (scope === 'class' || scope === 'teacher' || scope === 'room')) {
       const col = scope === 'class' ? 'l.class_id' : scope === 'teacher' ? 'l.teacher_id' : 'l.room_id'
@@ -824,13 +990,23 @@ schedulingRoutes.get('/timetable/view', async (c) => {
 
 // Copilot (stubbed)
 schedulingRoutes.post('/copilot/interpret', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })
 
 schedulingRoutes.post('/copilot/apply', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   return c.json({ detail: NOT_AVAILABLE }, 501)
 })

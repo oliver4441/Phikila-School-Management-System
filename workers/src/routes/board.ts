@@ -1,25 +1,33 @@
 import { Hono } from 'hono'
 import { createSql } from '../lib/db'
 import { insertRow, updateRowById, deleteRowById } from '../lib/crud'
-import { requireAuth } from '../lib/auth'
+import { resolveTenant, requireWrite, tenantSchoolId } from '../lib/tenancy'
 import { jsonError } from '../lib/http'
 import type { Bindings } from '../lib/env'
 
 export const boardRoutes = new Hono<{ Bindings: Bindings }>()
 
 boardRoutes.get('/members', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env)`select * from board_members order by term_start desc nulls last, created_at desc`
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db`select * from board_members where school_id = ${sid} order by term_start desc nulls last, created_at desc`
   return c.json(rows)
 })
 
 boardRoutes.post('/members', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'board_members', body)
+    const row = await insertRow(db, 'board_members', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -27,33 +35,55 @@ boardRoutes.post('/members', async (c) => {
 })
 
 boardRoutes.patch('/members/:memberId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'board_members', c.req.param('memberId'), body)
+  const ok = await db`select 1 from board_members where id = ${c.req.param('memberId')} and school_id = ${sid}`
+  if (!ok[0]) return c.json({ detail: 'Member not found.' }, 404)
+  const updated = await updateRowById(db, 'board_members', c.req.param('memberId'), { ...body, school_id: sid })
   return c.json(updated)
 })
 
 boardRoutes.delete('/members/:memberId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  await deleteRowById(createSql(c.env), 'board_members', c.req.param('memberId'))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const ok = await db`select 1 from board_members where id = ${c.req.param('memberId')} and school_id = ${sid}`
+  if (!ok[0]) return c.json({ detail: 'Member not found.' }, 404)
+  await deleteRowById(db, 'board_members', c.req.param('memberId'))
   return c.body(null, 204)
 })
 
 boardRoutes.get('/meetings', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env)`select * from board_meetings order by meeting_date desc`
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db`select * from board_meetings where school_id = ${sid} order by meeting_date desc`
   return c.json(rows)
 })
 
 boardRoutes.post('/meetings', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'board_meetings', body)
+    const row = await insertRow(db, 'board_meetings', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -61,37 +91,54 @@ boardRoutes.post('/meetings', async (c) => {
 })
 
 boardRoutes.get('/meetings/:meetingId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const meetingId = c.req.param('meetingId')
-  const meeting = (await db`select * from board_meetings where id = ${meetingId} limit 1`)[0]
+  const meeting = (await db`select * from board_meetings where id = ${meetingId} and school_id = ${sid} limit 1`)[0]
   if (!meeting) return c.json({ detail: 'Meeting not found.' }, 404)
-  const resolutions = await db`select * from board_resolutions where meeting_id = ${meetingId}`
+  const resolutions = await db`select * from board_resolutions where meeting_id = ${meetingId} and school_id = ${sid}`
   return c.json({ ...meeting, resolutions })
 })
 
 boardRoutes.patch('/meetings/:meetingId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'board_meetings', c.req.param('meetingId'), body)
+  const ok = await db`select 1 from board_meetings where id = ${c.req.param('meetingId')} and school_id = ${sid}`
+  if (!ok[0]) return c.json({ detail: 'Meeting not found.' }, 404)
+  const updated = await updateRowById(db, 'board_meetings', c.req.param('meetingId'), { ...body, school_id: sid })
   return c.json(updated)
 })
 
 boardRoutes.get('/resolutions', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env)`select * from board_resolutions order by adopted_at desc nulls last, created_at desc`
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db`select * from board_resolutions where school_id = ${sid} order by adopted_at desc nulls last, created_at desc`
   return c.json(rows)
 })
 
 boardRoutes.post('/resolutions', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'board_resolutions', body)
+    const row = await insertRow(db, 'board_resolutions', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -99,9 +146,16 @@ boardRoutes.post('/resolutions', async (c) => {
 })
 
 boardRoutes.patch('/resolutions/:resolutionId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'board_resolutions', c.req.param('resolutionId'), body)
+  const ok = await db`select 1 from board_resolutions where id = ${c.req.param('resolutionId')} and school_id = ${sid}`
+  if (!ok[0]) return c.json({ detail: 'Resolution not found.' }, 404)
+  const updated = await updateRowById(db, 'board_resolutions', c.req.param('resolutionId'), { ...body, school_id: sid })
   return c.json(updated)
 })
