@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, normalisePath, useNavigate, useRouter } from '../lib/router'
 import { displayName, useAuth } from '../lib/auth'
 import { usePlatformSession } from '../lib/session'
+import { useSchool } from '../lib/schoolContext'
 import { useToast } from './Toast'
 import { Logo, LogoMark } from './Logo'
 import { PrintFooter } from './PrintFooter'
@@ -127,15 +128,49 @@ function isActive(pathname: string, to: string) {
   return current === to || current.startsWith(`${to}/`)
 }
 
+/** Routes visible to each school membership role (admin/superadmin see all). */
+const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
+  academics: [
+    '/', '/timetable', '/my-timetable',
+    '/students', '/admissions', '/setup/teachers',
+    '/attendance', '/examinations',
+    '/health', '/inventory', '/library',
+    '/board', '/principal',
+    '/setup/school', '/setup/periods', '/setup/subjects', '/setup/classes', '/setup/rooms',
+    '/setup/academic-years', '/setup/levels',
+    '/scheduling/requirements', '/scheduling/constraints', '/scheduling/generate', '/scheduling/copilot',
+    '/ocr', '/analytics', '/versions', '/profile',
+  ],
+  finance: ['/', '/my-timetable', '/finance', '/finance/payment-inbox', '/finance/treasury', '/ocr', '/analytics', '/versions', '/profile'],
+  teacher: ['/', '/timetable', '/my-timetable', '/attendance', '/examinations', '/ocr', '/analytics', '/versions', '/profile'],
+  student: ['/', '/my-timetable', '/profile'],
+  parent: ['/', '/my-timetable', '/profile'],
+}
+
+function routesForRole(role: string | null, isSuperAdmin: boolean): Set<string> | null {
+  if (isSuperAdmin || role === 'admin') return null
+  return new Set(ROLE_ALLOWED_ROUTES[role ?? 'student'] ?? ROLE_ALLOWED_ROUTES.student)
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useRouter()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { notify } = useToast()
-  const isSuperAdmin = usePlatformSession().session?.is_super_admin ?? false
-  const groups = isSuperAdmin ? [PLATFORM_NAV, ...NAV] : NAV
+  const { session: platformSession } = usePlatformSession()
+  const isSuperAdmin = platformSession?.is_super_admin ?? false
+  const { activeSchoolId, activeRole, schools, setActiveSchool } = useSchool()
+  const allowed = routesForRole(activeRole ?? platformSession?.schools[0]?.role ?? 'student', isSuperAdmin)
+  const baseGroups = isSuperAdmin ? [PLATFORM_NAV, ...NAV] : NAV
+  const groups = allowed
+    ? baseGroups
+        .map((group) => ({ ...group, items: group.items.filter((item) => allowed.has(item.to)) }))
+        .filter((group) => group.items.length > 0)
+    : baseGroups
+  const bottomNav = allowed ? BOTTOM_NAV.filter((item) => allowed.has(item.to)) : BOTTOM_NAV
   const accountName = displayName(user)
   const accountInitial = accountName.trim().charAt(0).toUpperCase() || 'P'
+  const activeSchool = schools.find((s) => s.id === activeSchoolId)
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -308,6 +343,27 @@ export function AppShell({ children }: { children: ReactNode }) {
               Offline
             </span>
           )}
+          {schools.length > 1 && (
+            <select
+              className="topbar__school"
+              value={activeSchoolId ?? ''}
+              onChange={(event) => {
+                const id = Number(event.target.value)
+                if (Number.isFinite(id) && id > 0) {
+                  setActiveSchool(id)
+                  window.location.assign('/')
+                }
+              }}
+              aria-label="Switch school"
+              title={activeSchool ? `Active school: ${activeSchool.name}` : 'Switch school'}
+            >
+              {schools.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             className="icon-button topbar__theme"
@@ -360,7 +416,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
 
         <nav className="bottom-nav" aria-label="Quick navigation">
-          {BOTTOM_NAV.map((item) => {
+          {bottomNav.map((item) => {
             const active = isActive(pathname, item.to)
             return (
               <Link
