@@ -27,6 +27,7 @@ create index if not exists idx_school_memberships_user on public.school_membersh
 
 -- Academics & setup
 alter table public.academic_years add column if not exists school_id bigint references public.school_info(id) on delete cascade;
+alter table public.school_settings add column if not exists school_id bigint references public.school_info(id) on delete cascade;
 alter table public.terms add column if not exists school_id bigint references public.school_info(id) on delete cascade;
 alter table public.levels add column if not exists school_id bigint references public.school_info(id) on delete cascade;
 alter table public.streams add column if not exists school_id bigint references public.school_info(id) on delete cascade;
