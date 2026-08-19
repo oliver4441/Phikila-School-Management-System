@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { createSql } from '../lib/db'
 import { deleteRowById, insertRow, updateRowById } from '../lib/crud'
-import { requireAuth } from '../lib/auth'
+import { resolveTenant, requireWrite, tenantSchoolId } from '../lib/tenancy'
 import { jsonError } from '../lib/http'
 import type { Bindings } from '../lib/env'
 
@@ -55,20 +55,22 @@ function mapPaymentWrite(body: Record<string, unknown>): Record<string, unknown>
 }
 
 financeRoutes.get('/overview', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const [inv, pay] = await Promise.all([
-    db.query(`select coalesce(sum(amount), 0)::numeric as n, count(*)::int as c from student_invoices`),
+    db.query(`select coalesce(sum(amount), 0)::numeric as n, count(*)::int as c from student_invoices where school_id = ${sid}`),
     db.query(
-      `select coalesce(sum(amount), 0)::numeric as n from payments where reversed_at is null and status <> 'reversed'`,
+      `select coalesce(sum(amount), 0)::numeric as n from payments where school_id = ${sid} and reversed_at is null and status <> 'reversed'`,
     ),
   ])
   const totalInvoiced = Number(inv[0]?.n ?? 0)
   const totalCollected = Number(pay[0]?.n ?? 0)
   const invoicesCount = Number(inv[0]?.c ?? 0)
   const statusRows = (await db.query(
-    `select status, count(*)::int as n from student_invoices group by status`,
+    `select status, count(*)::int as n from student_invoices where school_id = ${sid} group by status`,
   )) as Record<string, unknown>[]
   let paidCount = 0
   let pendingCount = 0
@@ -87,21 +89,28 @@ financeRoutes.get('/overview', async (c) => {
 })
 
 financeRoutes.get('/fee-structures', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`${FEE_SELECT} order by id`)
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`${FEE_SELECT} where school_id = ${sid} order by id`)
   return c.json(rows)
 })
 
 financeRoutes.post('/fee-structures', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if (!(body as Record<string, unknown>).name) return jsonError(c, 'name is required.', 400)
   try {
-    const row = await insertRow(db, 'fee_structures', body as Record<string, unknown>)
-    const [fee] = await db.query(`${FEE_SELECT} where id = $1`, [row.id])
+    const row = await insertRow(db, 'fee_structures', { school_id: sid, ...body })
+    const [fee] = await db.query(`${FEE_SELECT} where id = $1 and school_id = ${sid}`, [row.id])
     return c.json(fee, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -109,27 +118,45 @@ financeRoutes.post('/fee-structures', async (c) => {
 })
 
 financeRoutes.patch('/fee-structures/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'fee_structures', c.req.param('id'), body as Record<string, unknown>)
+  const ok = await db.query(`select 1 from fee_structures where id = $1 and school_id = ${sid}`, [c.req.param('id')])
+  if (!ok[0]) return c.json({ detail: 'Fee structure not found.' }, 404)
+  const updated = await updateRowById(db, 'fee_structures', c.req.param('id'), body as Record<string, unknown>)
   return c.json(updated)
 })
 
 financeRoutes.delete('/fee-structures/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  await deleteRowById(createSql(c.env), 'fee_structures', c.req.param('id'))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const ok = await db.query(`select 1 from fee_structures where id = $1 and school_id = ${sid}`, [c.req.param('id')])
+  if (!ok[0]) return c.json({ detail: 'Fee structure not found.' }, 404)
+  await deleteRowById(db, 'fee_structures', c.req.param('id'))
   return c.body(null, 204)
 })
 
 financeRoutes.get('/invoices', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const q = c.req.query()
   const where: string[] = []
   const params: unknown[] = []
+  params.push(sid)
+  where.push(`i.school_id = $${params.length}`)
   if (q.student_id) {
     params.push(q.student_id)
     where.push(`i.student_id = $${params.length}`)
@@ -144,14 +171,18 @@ financeRoutes.get('/invoices', async (c) => {
 })
 
 financeRoutes.post('/invoices', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if (!(body as Record<string, unknown>).student_id) return jsonError(c, 'student_id is required.', 400)
   try {
-    const row = await insertRow(db, 'student_invoices', body as Record<string, unknown>)
-    const [invoice] = await db.query(`${INVOICE_SELECT} where i.id = $1`, [row.id])
+    const row = await insertRow(db, 'student_invoices', { school_id: sid, ...body })
+    const [invoice] = await db.query(`${INVOICE_SELECT} where i.id = $1 and i.school_id = ${sid}`, [row.id])
     return c.json(invoice, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -159,34 +190,47 @@ financeRoutes.post('/invoices', async (c) => {
 })
 
 financeRoutes.patch('/invoices/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'student_invoices', c.req.param('id'), body as Record<string, unknown>)
+  const ok = await db.query(`select 1 from student_invoices where id = $1 and school_id = ${sid}`, [c.req.param('id')])
+  if (!ok[0]) return c.json({ detail: 'Invoice not found.' }, 404)
+  const updated = await updateRowById(db, 'student_invoices', c.req.param('id'), body as Record<string, unknown>)
   return c.json(updated)
 })
 
 financeRoutes.get('/payments', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const studentId = c.req.query('student_id')
   const rows = await db.query(
-    `${PAYMENT_SELECT} ${studentId ? 'where student_id = $1' : ''} order by created_at desc`,
+    `${PAYMENT_SELECT} ${studentId ? `where student_id = $1 and school_id = ${sid}` : `where school_id = ${sid}`} order by created_at desc`,
     studentId ? [studentId] : [],
   )
   return c.json(rows)
 })
 
 financeRoutes.post('/payments', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if ((body as Record<string, unknown>).student_id == null) return jsonError(c, 'student_id is required.', 400)
   try {
-    const row = await insertRow(db, 'payments', mapPaymentWrite(body as Record<string, unknown>))
-    const [payment] = await db.query(`${PAYMENT_SELECT} where id = $1`, [row.id])
+    const row = await insertRow(db, 'payments', { school_id: sid, ...mapPaymentWrite(body as Record<string, unknown>) })
+    const [payment] = await db.query(`${PAYMENT_SELECT} where id = $1 and school_id = ${sid}`, [row.id])
     return c.json(payment, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -194,8 +238,11 @@ financeRoutes.post('/payments', async (c) => {
 })
 
 financeRoutes.post('/payments/decode', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const body = await c.req.json().catch(() => ({}))
   const message = String((body as Record<string, unknown>).message ?? '')
   const amountMatch = message.match(/(?:Ksh|KES)\s*([\d,]+(?:\.\d{2})?)/i)
@@ -212,36 +259,48 @@ financeRoutes.post('/payments/decode', async (c) => {
 })
 
 financeRoutes.post('/payments/:id/reverse', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const rows = await db.query(
-    `update payments set reversed_at = now(), status = 'reversed', reversal_reason = $1 where id = $2 returning id`,
+    `update payments set reversed_at = now(), status = 'reversed', reversal_reason = $1 where id = $2 and school_id = ${sid} returning id`,
     [(body as Record<string, unknown>).reason ?? 'Reversed by administrator', c.req.param('id')],
   )
   if (!rows[0]) return c.json({ detail: 'Payment not found.' }, 404)
-  const [payment] = await db.query(`${PAYMENT_SELECT} where id = $1`, [c.req.param('id')])
+  const [payment] = await db.query(`${PAYMENT_SELECT} where id = $1 and school_id = ${sid}`, [c.req.param('id')])
   return c.json(payment)
 })
 
 financeRoutes.get('/receipts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, 1 as school_id, receipt_number, payment_id, student_id, amount, 'issued' as status,
             null as issued_by, issued_at
-     from finance_receipts order by issued_at desc`,
+     from finance_receipts where school_id = ${sid} order by issued_at desc`,
   )
   return c.json(rows)
 })
 
 financeRoutes.post('/receipts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'finance_receipts', body as Record<string, unknown>)
+    const row = await insertRow(db, 'finance_receipts', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -249,32 +308,45 @@ financeRoutes.post('/receipts', async (c) => {
 })
 
 financeRoutes.get('/payment-inbox', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const status = c.req.query('status')
   const rows = await db.query(
-    `${INBOX_SELECT} ${status ? 'where lower(status) = lower($1)' : ''} order by created_at desc`,
+    `${INBOX_SELECT} ${status ? `where lower(status) = lower($1) and school_id = ${sid}` : `where school_id = ${sid}`} order by created_at desc`,
     status ? [status] : [],
   )
   return c.json(rows)
 })
 
 financeRoutes.patch('/payment-inbox/:id', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
-  const updated = await updateRowById(createSql(c.env), 'payment_inbox', c.req.param('id'), body as Record<string, unknown>)
+  const ok = await db.query(`select 1 from payment_inbox where id = $1 and school_id = ${sid}`, [c.req.param('id')])
+  if (!ok[0]) return c.json({ detail: 'Inbox item not found.' }, 404)
+  const updated = await updateRowById(db, 'payment_inbox', c.req.param('id'), body as Record<string, unknown>)
   return c.json(updated)
 })
 
 financeRoutes.post('/payment-inbox/:id/post', async (c) => {
-  const { error, user } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const inboxId = c.req.param('id')
-  const [item] = await db.query(`${INBOX_SELECT} where id = $1 limit 1`, [inboxId]) as Record<string, unknown>[]
+  const [item] = await db.query(`${INBOX_SELECT} where id = $1 and school_id = ${sid} limit 1`, [inboxId]) as Record<string, unknown>[]
   if (!item) return c.json({ detail: 'Inbox item not found.' }, 404)
   if (!item.matched_student_id) return jsonError(c, 'This payment has no matched student yet.', 400)
 
@@ -285,32 +357,35 @@ financeRoutes.post('/payment-inbox/:id/post', async (c) => {
     payment_method: String(item.payment_channel ?? item.source ?? 'cash'),
     reference_number: item.external_reference,
     status: 'completed',
-    received_by: user!.id,
+    received_by: ten.ctx.user.id,
+    school_id: sid,
   })
   await db.query(
-    `update payment_inbox set status = 'posted', posted_payment_id = $1, posted_at = now(), reviewed_by = $2, reviewed_at = now() where id = $3`,
-    [paymentRow.id, user!.id, inboxId],
+    `update payment_inbox set status = 'posted', posted_payment_id = $1, posted_at = now(), reviewed_by = $2, reviewed_at = now() where id = $3 and school_id = ${sid}`,
+    [paymentRow.id, ten.ctx.user.id, inboxId],
   )
-  const [updated] = await db.query(`${INBOX_SELECT} where id = $1`, [inboxId])
+  const [updated] = await db.query(`${INBOX_SELECT} where id = $1 and school_id = ${sid}`, [inboxId])
   return c.json(updated)
 })
 
 financeRoutes.get('/students/:studentId/balance', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const studentId = c.req.param('studentId')
   const student = (await db.query(
-    `select first_name, last_name, admission_number from students where id = $1 limit 1`,
+    `select first_name, last_name, admission_number from students where id = $1 and school_id = ${sid} limit 1`,
     [studentId],
   )) as Record<string, unknown>[]
   if (!student[0]) return c.json({ detail: 'Student not found.' }, 404)
   const [inv] = await db.query(
-    `select coalesce(sum(amount), 0)::numeric as n from student_invoices where student_id = $1`,
+    `select coalesce(sum(amount), 0)::numeric as n from student_invoices where student_id = $1 and school_id = ${sid}`,
     [studentId],
   )
   const [pay] = await db.query(
-    `select coalesce(sum(amount), 0)::numeric as n from payments where student_id = $1 and reversed_at is null and status <> 'reversed'`,
+    `select coalesce(sum(amount), 0)::numeric as n from payments where student_id = $1 and school_id = ${sid} and reversed_at is null and status <> 'reversed'`,
     [studentId],
   )
   const totalInvoiced = Number(inv?.n ?? 0)
@@ -325,43 +400,57 @@ financeRoutes.get('/students/:studentId/balance', async (c) => {
 })
 
 financeRoutes.get('/bank-accounts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, coalesce(school_id, 1) as school_id, bank_name, branch_name, account_name,
             account_identifier, coalesce(currency, 'KES') as currency, opening_balance, status
-     from bank_accounts order by id`,
+     from bank_accounts where school_id = ${sid} order by id`,
   )
   return c.json(rows)
 })
 
 financeRoutes.get('/cash-books', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, coalesce(school_id, 1) as school_id, name, book_type, bank_account_id, opening_balance, status
-     from cash_books order by id`,
+     from cash_books where school_id = ${sid} order by id`,
   )
   return c.json(rows)
 })
 
 financeRoutes.get('/bank-reconciliations', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, coalesce(school_id, 1) as school_id, bank_account_id, statement_date,
             statement_balance, book_balance, difference, status, reconciled_by, reconciled_at, notes
-     from bank_reconciliations order by statement_date desc`,
+     from bank_reconciliations where school_id = ${sid} order by statement_date desc`,
   )
   return c.json(rows)
 })
 
 financeRoutes.post('/bank-reconciliations', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'bank_reconciliations', body as Record<string, unknown>)
+    const row = await insertRow(db, 'bank_reconciliations', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -369,8 +458,11 @@ financeRoutes.post('/bank-reconciliations', async (c) => {
 })
 
 financeRoutes.post('/bank-accounts/:bankAccountId/statement-import', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const bankAccountId = c.req.param('bankAccountId')
   const form = await c.req.formData().catch(() => null)
   const file = form?.get('file')
@@ -384,18 +476,26 @@ financeRoutes.post('/bank-accounts/:bankAccountId/statement-import', async (c) =
 
 // Legacy endpoints kept for compatibility
 financeRoutes.get('/chart-of-accounts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`select * from chart_of_accounts order by code`)
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`select * from chart_of_accounts where school_id = ${sid} order by code`)
   return c.json(rows)
 })
 
 financeRoutes.post('/chart-of-accounts', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'chart_of_accounts', body as Record<string, unknown>)
+    const row = await insertRow(db, 'chart_of_accounts', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -403,20 +503,27 @@ financeRoutes.post('/chart-of-accounts', async (c) => {
 })
 
 financeRoutes.get('/journals', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(`select * from finance_journals order by created_at desc`)
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`select * from finance_journals where school_id = ${sid} order by created_at desc`)
   return c.json(rows)
 })
 
 financeRoutes.post('/journals', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   let journal: Record<string, unknown>
   try {
-    journal = await insertRow(db, 'finance_journals', body as Record<string, unknown>)
+    journal = await insertRow(db, 'finance_journals', { school_id: sid, ...body })
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
   }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { createSql } from '../lib/db'
 import { deleteRowById, insertRow } from '../lib/crud'
-import { requireAuth } from '../lib/auth'
+import { resolveTenant, requireWrite, tenantSchoolId } from '../lib/tenancy'
 import { jsonError } from '../lib/http'
 import type { Bindings } from '../lib/env'
 
@@ -24,21 +24,29 @@ const ENTRY_SELECT = `
 
 // Series
 examinationsRoutes.get('/series', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, coalesce(school_id, 1) as school_id, name, academic_year_id, term_id, status, created_at
-     from exam_series order by id desc`,
+     from exam_series where school_id = ${sid} order by id desc`,
   )
   return c.json(rows)
 })
 
 examinationsRoutes.post('/series', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'exam_series', body)
+    const row = await insertRow(db, 'exam_series', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -47,21 +55,29 @@ examinationsRoutes.post('/series', async (c) => {
 
 // Grade scale
 examinationsRoutes.get('/grade-scale', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const rows = await createSql(c.env).query(
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(
     `select id, coalesce(school_id, 1) as school_id, grade, min_score, max_score, points, description
-     from grade_scale order by min_score desc`,
+     from grade_scale where school_id = ${sid} order by min_score desc`,
   )
   return c.json(rows)
 })
 
 examinationsRoutes.post('/grade-scale', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
   const body = await c.req.json().catch(() => ({}))
   try {
-    const row = await insertRow(createSql(c.env), 'grade_scale', body)
+    const row = await insertRow(db, 'grade_scale', { school_id: sid, ...body })
     return c.json(row, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -70,35 +86,43 @@ examinationsRoutes.post('/grade-scale', async (c) => {
 
 // Examinations
 examinationsRoutes.get('/', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const seriesId = c.req.query('series_id')
   const rows = await db.query(
-    `${EXAM_SELECT} ${seriesId ? 'where series_id = $1' : ''} order by created_at desc`,
+    `${EXAM_SELECT} ${seriesId ? `where series_id = $1 and school_id = ${sid}` : `where school_id = ${sid}`} order by created_at desc`,
     seriesId ? [seriesId] : [],
   )
   return c.json(rows)
 })
 
 examinationsRoutes.get('/:examId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
-  const rows = await db.query(`${EXAM_SELECT} where id = $1 limit 1`, [c.req.param('examId')])
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const rows = await db.query(`${EXAM_SELECT} where id = $1 and school_id = ${sid} limit 1`, [c.req.param('examId')])
   if (!rows[0]) return c.json({ detail: 'Examination not found.' }, 404)
   return c.json(rows[0])
 })
 
 examinationsRoutes.post('/', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   if (!(body as Record<string, unknown>).name) return jsonError(c, 'name is required.', 400)
   try {
-    const row = await insertRow(db, 'examinations', body)
-    const [exam] = await db.query(`${EXAM_SELECT} where id = $1`, [row.id])
+    const row = await insertRow(db, 'examinations', { school_id: sid, ...body })
+    const [exam] = await db.query(`${EXAM_SELECT} where id = $1 and school_id = ${sid}`, [row.id])
     return c.json(exam, 201)
   } catch (err) {
     return jsonError(c, (err as Error).message, 400)
@@ -106,19 +130,32 @@ examinationsRoutes.post('/', async (c) => {
 })
 
 examinationsRoutes.delete('/:examId', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  await deleteRowById(createSql(c.env), 'examinations', c.req.param('examId'))
+  const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const ok = await db.query(`select 1 from examinations where id = $1 and school_id = ${sid}`, [c.req.param('examId')])
+  if (!ok[0]) return c.json({ detail: 'Examination not found.' }, 404)
+  await deleteRowById(db, 'examinations', c.req.param('examId'))
   return c.body(null, 204)
 })
 
 // Score entry
 examinationsRoutes.post('/:examId/entries', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
-  const body = await c.req.json().catch(() => ({}))
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
+  const w = requireWrite(ten.ctx)
+  if ('error' in w) return w.error
+  const body = await c.req.json().catch(() => ({}))
   const examId = c.req.param('examId')
+  const examOk = await db.query(`select 1 from examinations where id = $1 and school_id = ${sid}`, [examId])
+  if (!examOk[0]) return c.json({ detail: 'Examination not found.' }, 404)
   const entries = Array.isArray((body as Record<string, unknown>).entries)
     ? ((body as Record<string, unknown>).entries as Record<string, unknown>[])
     : []
@@ -151,13 +188,15 @@ examinationsRoutes.post('/:examId/entries', async (c) => {
 })
 
 examinationsRoutes.get('/:examId/entries', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const examId = c.req.param('examId')
   const subjectId = c.req.query('subject_id')
   const studentId = c.req.query('student_id')
-  const where = ['es.examination_id = $1']
+  const where = [`es.examination_id = $1`, `es.examination_id in (select id from examinations where school_id = ${sid})`]
   const params: unknown[] = [examId]
   if (subjectId) {
     params.push(subjectId)
@@ -173,9 +212,11 @@ examinationsRoutes.get('/:examId/entries', async (c) => {
 
 // Results
 examinationsRoutes.get('/:examId/results', async (c) => {
-  const { error } = requireAuth(c as never)
-  if (error) return error
   const db = createSql(c.env)
+  const ten = await resolveTenant(c, db)
+  if ('error' in ten) return ten.error
+  const sid = tenantSchoolId(ten.ctx)
+  if (!sid) return c.json({ detail: 'Select a school first.' }, 400)
   const examId = c.req.param('examId')
   const classId = c.req.query('class_id')
 
@@ -184,7 +225,7 @@ examinationsRoutes.get('/:examId/results', async (c) => {
      from exam_entries e
      join exam_subjects es on es.id = e.exam_subject_id
      join students s on s.id = e.student_id
-     where es.examination_id = $1 ${classId ? 'and s.current_class_id = $2' : ''}
+     where es.examination_id = $1 and es.examination_id in (select id from examinations where school_id = ${sid}) ${classId ? 'and s.current_class_id = $2' : ''}
      order by e.student_id`,
     classId ? [examId, classId] : [examId],
   )) as Record<string, unknown>[]
@@ -193,14 +234,14 @@ examinationsRoutes.get('/:examId/results', async (c) => {
   const students = new Map<string, Record<string, unknown>>()
   if (studentIds.length) {
     const rows = (await db.query(
-      `select id, first_name, last_name, admission_number from students where id = any($1)`,
+      `select id, first_name, last_name, admission_number from students where id = any($1) and school_id = ${sid}`,
       [studentIds],
     )) as Record<string, unknown>[]
     for (const r of rows) students.set(String(r.id), r)
   }
 
   const scales = (await db.query(
-    `select grade, min_score, max_score, points from grade_scale order by min_score desc`,
+    `select grade, min_score, max_score, points from grade_scale where school_id = ${sid} order by min_score desc`,
   )) as Record<string, unknown>[]
 
   function gradeFor(score: number): string | undefined {
