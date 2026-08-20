@@ -87,7 +87,7 @@ export function LandingPage() {
         <section className="section platform" id="platform">
           <div className="container">
             <div className="section-intro"><div><span className="kicker">THE PHIKILA PLATFORM</span><h2>Everything operational.<br /><span>Connected by design.</span></h2></div><p>Replace fragmented workflows with a shared operating layer for administrators, teachers, students and families.</p></div>
-            <div className="capability-explorer">
+            <div className="capability-explorer" id="capabilities">
               <div className="capability-list">{CAPABILITIES.map((item, index) => <button className={index === activeCapability ? 'capability active' : 'capability'} key={item.title} onClick={() => setActiveCapability(index)}><span>{item.eyebrow}</span><strong>{item.title}</strong><i>→</i></button>)}</div>
               <div className="capability-detail"><span className="detail-number">{capability.eyebrow}</span><h3>{capability.title}</h3><p>{capability.text}</p><ul>{capability.items.map((item) => <li key={item}><span>✓</span>{item}</li>)}</ul><div className="detail-visual"><div className="mini-header"><span>Phikila workspace</span><span>Live</span></div><div className="mini-chart"><div style={{ height: '42%' }} /><div style={{ height: '68%' }} /><div style={{ height: '54%' }} /><div style={{ height: '82%' }} /><div style={{ height: '72%' }} /><div style={{ height: '92%' }} /></div><div className="mini-footer"><span>Operational visibility</span><b>Updated now</b></div></div></div>
             </div>
