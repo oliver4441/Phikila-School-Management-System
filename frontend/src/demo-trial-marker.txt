@@ -1,0 +1,1 @@
+Demo commercial flow: 30-day free trial. No real payment or tenant provisioning is performed in this skeleton.
