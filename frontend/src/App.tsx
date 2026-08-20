@@ -11,6 +11,7 @@ import { SignUpPage } from './pages/SignUpPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DemoOnboardingPage } from './pages/DemoOnboardingPage'
 import { NotFoundPage } from './pages/StatusPages'
 
 const TimetablePage = lazy(() => import('./pages/TimetablePage').then((m) => ({ default: m.TimetablePage })))
@@ -42,7 +43,7 @@ const PlatformAuditPage = lazy(() => import('./pages/PlatformAuditPage').then((m
 const PlatformEmailPage = lazy(() => import('./pages/PlatformEmailPage').then((m) => ({ default: m.PlatformEmailPage })))
 const AwaitingApprovalPage = lazy(() => import('./pages/AwaitingApprovalPage').then((m) => ({ default: m.AwaitingApprovalPage })))
 
-const PUBLIC_ROUTES = new Set(['/login', '/signup', '/forgot-password', '/reset-password'])
+const PUBLIC_ROUTES = new Set(['/login', '/signup', '/forgot-password', '/reset-password', '/start'])
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, initialising } = useAuth()
@@ -72,17 +73,7 @@ function LandingRedirect() {
   const { session, initialising } = useAuth()
   if (initialising) return <FullPageLoader label="Checking your session…" />
   if (session) {
-    return (
-      <RequireAuth>
-        <AccessGate>
-          <AppShell>
-            <Suspense fallback={<FullPageLoader label="Loading page…" />}>
-              <DashboardPage />
-            </Suspense>
-          </AppShell>
-        </AccessGate>
-      </RequireAuth>
-    )
+    return <RequireAuth><AccessGate><AppShell><Suspense fallback={<FullPageLoader label="Loading page…" />}><DashboardPage /></Suspense></AppShell></AccessGate></RequireAuth>
   }
   return <LandingPage />
 }
@@ -139,13 +130,12 @@ function ProtectedRoutes({ pathname }: { pathname: string }) {
 function Routes() {
   const { pathname } = useRouter()
   const path = normalisePath(pathname)
+  if (path === '/start') return <DemoOnboardingPage />
   if (PUBLIC_ROUTES.has(path)) {
     const publicPage = path === '/login' ? <LoginPage /> : path === '/signup' ? <SignUpPage /> : path === '/forgot-password' ? <ForgotPasswordPage /> : <ResetPasswordPage />
     return <RedirectIfSignedIn>{publicPage}</RedirectIfSignedIn>
   }
-  if (path === '/') {
-    return <LandingRedirect />
-  }
+  if (path === '/') return <LandingRedirect />
   return <ProtectedRoutes pathname={path} />
 }
 
