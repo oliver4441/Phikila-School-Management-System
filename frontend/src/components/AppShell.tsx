@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, normalisePath, useNavigate, useRouter } from '../lib/router'
 import { displayName, useAuth } from '../lib/auth'
 import { usePlatformSession } from '../lib/session'
@@ -7,6 +7,7 @@ import { useToast } from './Toast'
 import { Logo, LogoMark } from './Logo'
 import { PrintFooter } from './PrintFooter'
 import { AiChatWidget } from './AiChatWidget'
+import { CommandPalette, useCommandPaletteShortcut, type PaletteItem } from './CommandPalette'
 import {
   CalendarIcon,
   CheckIcon,
@@ -218,6 +219,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
   const drawerRef = useRef<HTMLElement | null>(null)
   const menuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
+  useCommandPaletteShortcut(togglePalette)
+
+  // Flat list of all visible nav items for the command palette
+  const paletteItems: PaletteItem[] = useMemo(() => {
+    const allGroups = isSuperAdmin ? [PLATFORM_NAV, ...NAV] : NAV
+    const flat: PaletteItem[] = []
+    for (const group of allGroups) {
+      if (allowed && !group.items.some((i) => allowed.has(i.to))) continue
+      for (const item of group.items) {
+        if (allowed && !allowed.has(item.to)) continue
+        flat.push({ to: item.to, label: item.label, group: group.label })
+      }
+    }
+    return flat
+  }, [isSuperAdmin, allowed])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -291,7 +309,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const navigation = (
     <nav className="sidebar__nav" aria-label="Main">
-      <div className="sidebar__search-hint" role="button" tabIndex={0} aria-label="Search (Ctrl+K)">
+      <div className="sidebar__search-hint" role="button" tabIndex={0} aria-label="Search (Ctrl+K)" onClick={togglePalette} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePalette() } }}>
         <SearchIcon width={16} height={16} />
         <span>Search…</span>
         <kbd>⌘K</kbd>
@@ -482,6 +500,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <AiChatWidget />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        items={paletteItems}
+      />
     </div>
   )
 }
