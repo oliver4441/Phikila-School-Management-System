@@ -1,6 +1,6 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "fastapi",
-  "installCommand": "python -m pip install -r requirements.txt && npm --prefix frontend ci --include=dev",
-  "buildCommand": "npm --prefix frontend run build && test -f frontend/dist/index.html"
+  "framework": "vite",
+  "buildCommand": "cd frontend && npm run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "cd frontend && npm install --registry=https://registry.npmjs.org/"
 }
