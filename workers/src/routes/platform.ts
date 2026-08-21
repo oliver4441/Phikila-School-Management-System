@@ -393,6 +393,17 @@ platformRoutes.delete('/schools/:schoolId/administrators/:userId', async (c) => 
   return c.body(null, 204)
 })
 
+/** First-run bootstrap: promote self to super_admin when no admins exist yet. */
+platformRoutes.post('/bootstrap-admin', async (c) => {
+  const { error, user } = requireAuth(c as never)
+  if (error) return error
+  const db = createSql(c.env)
+  const existing = (await db`select 1 from tt_platform_admins limit 1`)[0]
+  if (existing) return c.json({ detail: 'A super admin already exists. Use the platform dashboard to manage administrators.' }, 409)
+  await db`insert into tt_platform_admins (user_id, role) values (${user!.id}, 'super_admin') on conflict (user_id) do update set role = 'super_admin'`
+  return c.json({ ok: true, message: `${user!.email} promoted to super admin.` }, 201)
+})
+
 platformRoutes.get('/administrators', async (c) => {
   const { error, user } = requireAuth(c as never)
   if (error) return error
