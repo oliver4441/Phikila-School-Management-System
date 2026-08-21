@@ -11,7 +11,7 @@ const PAYMENT_SELECT = `
   select id, coalesce(school_id, 1) as school_id, coalesce(invoice_id, 0) as invoice_id,
          student_id, amount, coalesce(payment_method, method) as payment_method,
          coalesce(reference_number, reference) as reference_number, notes,
-         coalesce(received_by, created_by) as received_by, status,
+         coalesce(received_by, created_by::text) as received_by, status,
          journal_id, reversed_at, reversal_reason, created_at
   from payments
 `

@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import { createApp } from './lib/http'
 import { createSql } from './lib/db'
-import { authMiddleware } from './lib/auth'
+import { authMiddleware, requireAuth } from './lib/auth'
+import { getSchoolIdHeader } from './lib/tenancy'
 import type { Bindings } from './lib/env'
 import { authRoutes } from './routes/auth'
 import { platformRoutes } from './routes/platform'
@@ -21,6 +22,7 @@ import { boardRoutes } from './routes/board'
 import { principalRoutes } from './routes/principal'
 import { llmRoutes } from './routes/llm'
 import { ocrRoutes } from './routes/ocr'
+import { aiRoutes } from './routes/ai'
 
 const app = createApp<Bindings>()
 
@@ -44,23 +46,29 @@ app.route('/api/v1/board', boardRoutes)
 app.route('/api/v1/principal', principalRoutes)
 app.route('/api/v1/llm', llmRoutes)
 app.route('/api/v1/ocr', ocrRoutes)
+app.route('/api/v1/ai', aiRoutes)
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
 app.post('/api/v1/upload', async (c) => {
+  const { error } = requireAuth(c)
+  if (error) return error
   const form = await c.req.formData()
   const entry = form.get('file')
   if (!entry || typeof entry === 'string') return c.json({ detail: 'No file provided.' }, 400)
   const file = entry as unknown as { name?: string; type?: string; stream: () => ReadableStream }
   const name = typeof form.get('filename') === 'string' ? String(form.get('filename')) : file.name || 'upload'
-  const key = `${Date.now()}-${name.replace(/[^\w.\-]+/g, '_')}`
+  const scope = getSchoolIdHeader(c) ?? `u_${c.get('authUser')!.id}`
+  const key = `school_${scope}/${Date.now()}-${name.replace(/[^\w.\-]+/g, '_')}`
   await c.env.MEDIA!.put(key, file.stream(), {
     httpMetadata: { contentType: file.type || 'application/octet-stream' },
   })
   return c.json({ url: `/static/${key}` })
 })
 
-app.get('/static/:key', async (c) => {
+app.get('/static/:key', authMiddleware, async (c) => {
+  const { error } = requireAuth(c)
+  if (error) return error
   const key = c.req.param('key')
   const obj = await c.env.MEDIA!.get(key)
   if (!obj) return c.notFound()

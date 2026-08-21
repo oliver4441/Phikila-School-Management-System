@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
-import { Badge, EmptyState, LoadingBlock } from '../components/States'
+import { Badge, EmptyState, LoadingBlock, Spinner } from '../components/States'
 import { friendlyApiError } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { examinations, type ExamSeries, type Examination, type StudentResult } from '../lib/examinations'
+import { streamAnalytics } from '../lib/ai'
 
 export default function ExaminationsPage() {
   const { notify } = useToast()
@@ -202,11 +203,39 @@ function NewExamForm({ series, onCreated, onCancel }: { series: ExamSeries[]; on
 }
 
 function ResultsTable({ exam, results, loading, onClose }: { exam: Examination; results: StudentResult[]; loading: boolean; onClose: () => void }) {
+  const { notify } = useToast()
+  const [aiAnalysis, setAiAnalysis] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [showAi, setShowAi] = useState(false)
+
+  function runAiAnalysis() {
+    if (aiLoading || results.length === 0) return
+    setShowAi(true)
+    setAiLoading(true)
+    setAiAnalysis('')
+
+    streamAnalytics({
+      endpoint: '/analytics/grades',
+      body: { className: exam.name },
+      onToken: (token) => setAiAnalysis((prev) => prev + token),
+      onDone: () => setAiLoading(false),
+      onError: (detail) => {
+        setAiLoading(false)
+        notify(detail, 'error')
+      },
+    })
+  }
+
   return (
     <div className="card section" style={{ marginBottom: 'var(--space-4)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
         <h2 className="section__title" style={{ marginBottom: 0 }}>Results — {exam.name}</h2>
-        <button className="button button--ghost button--sm" onClick={onClose}>✕ Close</button>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <button className="button button--secondary button--sm" onClick={runAiAnalysis} disabled={aiLoading || results.length === 0}>
+            {aiLoading ? <><Spinner label="Analyzing" /> Analyzing…</> : '✦ AI Analysis'}
+          </button>
+          <button className="button button--ghost button--sm" onClick={onClose}>✕ Close</button>
+        </div>
       </div>
       {loading ? (
         <LoadingBlock label="Generating results" rows={3} />
@@ -239,9 +268,27 @@ function ResultsTable({ exam, results, loading, onClose }: { exam: Examination; 
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </table>          </div>
         </>
+      )}
+
+      {/* AI Analysis panel */}
+      {showAi && (
+        <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', border: '1px solid var(--color-line)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-muted)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+            <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>✦ Grade Analysis</h3>
+            <button className="button button--ghost button--sm" onClick={() => { setShowAi(false); setAiAnalysis('') }}>✕ Dismiss</button>
+          </div>
+          {aiLoading && !aiAnalysis && (
+            <p style={{ color: 'var(--color-ink-muted)', fontSize: '0.875rem' }}><Spinner label="Analyzing grades" /> Analyzing grades…</p>
+          )}
+          {aiAnalysis && (
+            <div
+              style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
+              dangerouslySetInnerHTML={{ __html: aiAnalysis.replace(/\n/g, '<br/>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }}
+            />
+          )}
+        </div>
       )}
     </div>
   )

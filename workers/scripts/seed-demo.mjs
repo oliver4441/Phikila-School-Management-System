@@ -108,7 +108,6 @@ async function exec(sqlString) {
   return r
 }
 
-/** Multi-row insert; returns the `id` values in row order. */
 async function batch(table, cols, rows) {
   if (!rows.length) return []
   const placeholders = rows.map((_, r) => `(${cols.map((_, c) => `$${r * cols.length + c + 1}`).join(', ')})`).join(', ')
@@ -119,29 +118,26 @@ async function batch(table, cols, rows) {
 }
 
 async function cleanup(sid) {
-  const del = async (q) => { await retry(() => sql`${sql.unsafe(q)}`) }
-  const withSchool = (table) => `delete from ${table} where school_id = ${sid}`
-  const q = [
-    'student_invoices', 'payments', 'fee_structures', 'exam_series', 'grade_scale', 'examinations',
+  console.log(`=== Cleaning up school ${sid} ===`)
+  // Delete tt_solver_jobs first to avoid foreign key issues
+  await retry(() => sql`delete from tt_solver_jobs where version_id in (select id from tt_versions where school_id = ${sid})`)
+  // Delete tt_lessons and tt_audit
+  await retry(() => sql`delete from tt_lessons where version_id in (select id from tt_versions where school_id = ${sid})`)
+  await retry(() => sql`delete from tt_audit where entity_id::bigint in (select id from tt_lessons where version_id in (select id from tt_versions where school_id = ${sid}))`)
+  // Delete all other tables for this school
+  const tables = [
+    'student_invoices', 'finance_receipts', 'payments', 'payment_inbox', 'bank_reconciliations', 'bank_accounts',
+    'cash_books', 'chart_of_accounts', 'finance_journals', 'fee_structures', 'exam_series', 'grade_scale', 'examinations',
     'attendance_sessions', 'library_books', 'inventory_items', 'board_meetings', 'board_members',
     'announcements', 'principal_insights', 'admission_applications', 'class_registers', 'health_records',
-    'welfare_cases', 'enrollment_records', 'tt_constraints', 'tt_lesson_requirements', 'tt_versions',
-    'tt_days', 'tt_periods', 'tt_rooms', 'tt_subjects', 'tt_classes', 'tt_teachers', 'teachers', 'students', 'terms',
-    'academic_years', 'departments', 'subjects', 'streams', 'levels',
-  ].map(withSchool)
-  q.push(`delete from exam_entries where exam_subject_id in (select id from exam_subjects where examination_id in (select id from examinations where school_id = ${sid}))`)
-  q.push(`delete from exam_subjects where examination_id in (select id from examinations where school_id = ${sid})`)
-  q.push(`delete from attendance_records where session_id in (select id from attendance_sessions where school_id = ${sid})`)
-  q.push(`delete from library_loans where book_id in (select id from library_books where school_id = ${sid})`)
-  q.push(`delete from inventory_movements where item_id in (select id from inventory_items where school_id = ${sid})`)
-  q.push(`delete from board_resolutions where meeting_id in (select id from board_meetings where school_id = ${sid})`)
-  q.push(`delete from student_documents where student_id in (select id from students where school_id = ${sid})`)
-  q.push(`delete from guardians where student_id in (select id from students where school_id = ${sid})`)
-  q.push(`delete from tt_lessons where version_id in (select id from tt_versions where school_id = ${sid})`)
-  q.push(`delete from tt_solver_jobs where version_id in (select id from tt_versions where school_id = ${sid})`)
-  q.push(`delete from qualifications where teacher_id in (select id from teachers where school_id = ${sid})`)
-  q.push(`delete from availabilities where teacher_id in (select id from teachers where school_id = ${sid})`)
-  for (const s of q) await del(s)
+    'welfare_cases', 'enrollment_records', 'tt_constraints', 'tt_lesson_requirements',
+    'tt_versions', 'tt_days', 'tt_periods', 'tt_rooms', 'tt_subjects', 'tt_classes', 'tt_teachers',
+    'teachers', 'students', 'terms', 'academic_years', 'departments', 'subjects', 'streams', 'levels'
+  ]
+  for (const t of tables) {
+    await retry(() => sql`delete from ${sql.unsafe(t)} where school_id = ${sid}`)
+  }
+  console.log('=== Cleanup complete ===')
 }
 
 async function seedSchool(s) {
@@ -159,8 +155,8 @@ async function seedSchool(s) {
   ]))
 
   const subjects = SUBJECTS.map((name) => ({ name, code: name.split(' ').map((w) => w[0]).join('').toUpperCase(), category: 'core', description: `${name} subject`, school_id: sid }))
-  await batch('subjects', ['name', 'code', 'category', 'description', 'school_id'], subjects)
-  await batch('tt_subjects', ['name', 'code', 'category', 'school_id'], SUBJECTS.map((name) => ({ name, code: name.split(' ').map((w) => w[0]).join('').toUpperCase(), category: 'core', school_id: sid })))
+  const subjectIds = await batch('subjects', ['name', 'code', 'category', 'description', 'school_id'], subjects)
+  const ttSubjectIds = await batch('tt_subjects', ['name', 'code', 'category', 'school_id'], SUBJECTS.map((name) => ({ name, code: name.split(' ').map((w) => w[0]).join('').toUpperCase(), category: 'core', school_id: sid })))
 
   await batch('departments', ['name', 'description', 'head_of_department', 'school_id'], [
     { name: 'Academic', description: 'Teaching and learning', head_of_department: s.teacherNames[0], school_id: sid },
@@ -183,8 +179,7 @@ async function seedSchool(s) {
         subject_specialization: SUBJECTS[i % SUBJECTS.length], school_id: sid,
       }
     }))
-
-  await batch('tt_teachers', ['name', 'email', 'subject_specialization', 'max_periods', 'code', 'department', 'max_lessons_per_day', 'max_consecutive', 'workload_target', 'is_active', 'school_id'],
+  const ttTeacherIds = await batch('tt_teachers', ['name', 'email', 'subject_specialization', 'max_periods', 'code', 'department', 'max_lessons_per_day', 'max_consecutive', 'workload_target', 'is_active', 'school_id'],
     s.teacherNames.map((full, i) => {
       const [fn, ln] = full.split(' ')
       return {
@@ -197,7 +192,7 @@ async function seedSchool(s) {
   await batch('tt_rooms', ['name', 'capacity', 'room_type', 'code', 'building', 'is_accessible', 'school_id'],
     [{ name: 'Room 1', capacity: 40, room_type: 'Classroom', code: 'R1', building: 'Main Block', is_accessible: true, school_id: sid },
      { name: 'Room 2', capacity: 40, room_type: 'Classroom', code: 'R2', building: 'Main Block', is_accessible: true, school_id: sid },
-     { name: 'Science Lab', capacity: 30, room_type: 'Laboratory', code: 'LAB1', building: 'Science Wing', is_accessible: false, school_id: sid }])
+     { name: 'Science Lab', capacity: 30, room_type: 'Laboratory', code: 'LAB1', building: 'Main Block', is_accessible: false, school_id: sid }])
 
   const classIds = await batch('tt_classes', ['name', 'level', 'stream', 'class_teacher_id', 'size', 'code', 'grade', 'student_count', 'school_id'],
     s.classes.map((name, i) => {
@@ -250,9 +245,8 @@ async function seedSchool(s) {
 
   const feeId = (await batch('fee_structures', ['name', 'amount', 'academic_year_id', 'term_id', 'level_id', 'currency', 'status', 'category', 'frequency', 'school_id'],
     [{ name: 'Annual tuition', amount: sid === 1 ? 45000 : 68000, academic_year_id: yearId, term_id: termIds[0], level_id: levelIds[0], currency: 'KES', status: 'active', category: 'tuition', frequency: 'annual', school_id: sid }]))[0]
-
   const amount = sid === 1 ? 45000 : 68000
-  await batch('student_invoices', ['invoice_number', 'student_id', 'fee_structure_id', 'amount', 'status', 'due_date', 'term', 'academic_year', 'school_id'],
+  const invoiceIds = await batch('student_invoices', ['invoice_number', 'student_id', 'fee_structure_id', 'amount', 'status', 'due_date', 'term', 'academic_year', 'school_id'],
     studentIds.slice(0, 5).map((id, i) => ({
       invoice_number: `INV-${sid}-2026-${String(100 + i)}`, student_id: id, fee_structure_id: feeId, amount,
       status: i % 3 === 0 ? 'paid' : 'pending', due_date: '2026-04-15', term: 'Term 1', academic_year: '2026', school_id: sid,
@@ -266,18 +260,126 @@ async function seedSchool(s) {
     [{ name: 'Exercise books', category: 'stationery', quantity: 240, unit: 'pieces', reorder_level: 50, unit_cost: 120, status: 'In Stock', school_id: sid },
      { name: 'Ballpoint pens', category: 'stationery', quantity: 180, unit: 'pieces', reorder_level: 40, unit_cost: 40, status: 'In Stock', school_id: sid },
      { name: 'Chalk (boxes)', category: 'teaching', quantity: 30, unit: 'boxes', reorder_level: 8, unit_cost: 350, status: 'In Stock', school_id: sid }])
+
   await batch('announcements', ['title', 'body', 'audience', 'priority', 'status', 'published_by', 'published_at', 'school_id'],
     [{ title: 'Term 2 begins Monday', body: 'Reporting time is 7:45 a.m.', audience: 'everyone', priority: 'normal', status: 'published', published_by: publishedBy, published_at: new Date().toISOString(), school_id: sid },
      { title: 'Mid-term exams', body: 'Mid-term exams run next week.', audience: 'students', priority: 'high', status: 'published', published_by: publishedBy, published_at: new Date().toISOString(), school_id: sid }])
+
   await batch('board_members', ['full_name', 'position', 'email', 'phone', 'status', 'school_id'],
     [{ full_name: 'Mr. James Ochieng', position: 'Chairperson', email: 'chair@phikila.com', phone: '+254711000001', status: 'active', school_id: sid },
-     { full_name: 'Mrs. Faith Muthoni', position: 'Secretary', email: 'secretary@phikila.com', phone: '+254711000002', status: 'active', school_id: sid }])
+     { full_name: 'Mrs. Faith Muthoni', position: 'Secretary', email: 'secretary@phikilan.com', phone: '+254711000002', status: 'active', school_id: sid }])
+
   await batch('health_records', ['student_id', 'record_type', 'date', 'title', 'description', 'school_id'],
     [{ student_id: studentIds[0], record_type: 'checkup', date: '2026-03-10', title: 'Routine checkup', description: 'Height and weight measured.', school_id: sid },
      { student_id: studentIds[1], record_type: 'allergy', date: '2026-02-20', title: 'Pollen allergy', description: 'Seasonal rhinitis; carry antihistamine.', school_id: sid }])
+
   await batch('admission_applications', ['application_number', 'first_name', 'last_name', 'gender', 'applying_for_level', 'parent_name', 'parent_phone', 'parent_email', 'status', 'school_id'],
     [{ application_number: `APP-${sid}-2026-001`, first_name: 'Linda', last_name: 'Adhiambo', gender: 'female', applying_for_level: `${s.label} 1`, parent_name: 'Mary Adhiambo', parent_phone: '+254722000001', parent_email: 'mary.adhiambo@gmail.com', status: 'pending', school_id: sid },
      { application_number: `APP-${sid}-2026-002`, first_name: 'Victor', last_name: 'Barasa', gender: 'male', applying_for_level: `${s.label} 2`, parent_name: 'Paul Barasa', parent_phone: '+254722000002', parent_email: 'paul.barasa@gmail.com', status: 'pending', school_id: sid }])
+
+  // Examinations: grade scale, series, exam, subjects, per-student entries
+  await batch('grade_scale', ['school_id', 'grade', 'min_score', 'max_score', 'points', 'description'],
+    [{ grade: 'A', min_score: 80, max_score: 100, points: 12, description: 'Distinction' },
+     { grade: 'B', min_score: 70, max_score: 79, points: 10, description: 'Excellent' },
+     { grade: 'C', min_score: 60, max_score: 69, points: 8, description: 'Good' },
+     { grade: 'D', min_score: 50, max_score: 59, points: 6, description: 'Satisfactory' },
+     { grade: 'E', min_score: 0, max_score: 49, points: 4, description: 'Needs improvement' }]
+      .map((g) => ({ ...g, school_id: sid })))
+
+  const [seriesId] = await batch('exam_series', ['school_id', 'name', 'academic_year_id', 'term_id', 'status'],
+    [{ school_id: sid, name: 'Term 2 Examinations', academic_year_id: yearId, term_id: termIds[1], status: 'draft' }])
+  const [examId] = await batch('examinations', ['school_id', 'series_id', 'name', 'term', 'academic_year', 'start_date', 'end_date', 'exam_date', 'total_marks', 'passing_marks', 'status', 'created_by'],
+    [{ school_id: sid, series_id: seriesId, name: 'Term 2 End of Term Exams', term: 'Term 2', academic_year: '2026', start_date: '2026-06-15', end_date: '2026-06-26', exam_date: '2026-06-17', total_marks: 100, passing_marks: 50, status: 'published', created_by: publishedBy }])
+  const examSubjectIds = await batch('exam_subjects', ['examination_id', 'subject_id', 'subject_name', 'max_score', 'weight', 'school_id'],
+    subjectIds.map((subId, i) => ({ examination_id: examId, subject_id: subId, subject_name: SUBJECTS[i % SUBJECTS.length], max_score: 100, weight: 100, school_id: sid })))
+  const scoreRows = []
+  for (let sIdx = 0; sIdx < studentIds.length; sIdx++) {
+    for (let suIdx = 0; suIdx < examSubjectIds.length; suIdx++) {
+      const score = ((sIdx * 7 + suIdx * 13) % 61) + 40
+      scoreRows.push({
+        exam_subject_id: examSubjectIds[suIdx], student_id: studentIds[sIdx], score,
+        grade: score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : score >= 50 ? 'D' : 'E',
+        remark: null, school_id: sid,
+      })
+    }
+  }
+  await batch('exam_entries', ['exam_subject_id', 'student_id', 'score', 'grade', 'remark', 'school_id'], scoreRows)
+
+  // Attendance: two open lesson sessions with per-student records
+  const sessionIds = await batch('attendance_sessions', ['school_id', 'session_type', 'session_date', 'class_id', 'period_index', 'subject', 'class_name', 'teacher_name', 'status', 'created_by'],
+    [{ school_id: sid, session_type: 'lesson', session_date: '2026-06-10', class_id: classIds[0], period_index: 1, subject: 'Mathematics', class_name: s.classes[0], teacher_name: s.teacherNames[0], status: 'open', created_by: publishedBy },
+     { school_id: sid, session_type: 'lesson', session_date: '2026-06-11', class_id: classIds[1], period_index: 2, subject: 'English', class_name: s.classes[1], teacher_name: s.teacherNames[1], status: 'open', created_by: publishedBy }])
+  const attRows = []
+  const attPool = [studentIds.slice(0, 4), studentIds.slice(4, 9)]
+  for (let sIdx = 0; sIdx < sessionIds.length; sIdx++) {
+    attPool[sIdx].forEach((stId, i) => {
+      attRows.push({
+        school_id: sid, session_id: sessionIds[sIdx], student_id: stId,
+        status: i % 7 === 0 ? 'absent' : i % 4 === 0 ? 'late' : 'present',
+        remark: i % 4 === 0 ? 'Arrived 10 minutes late' : null, marked_by: publishedBy,
+      })
+    })
+  }
+  await batch('attendance_records', ['school_id', 'session_id', 'student_id', 'status', 'remark', 'marked_by'], attRows)
+
+  // Timetable: lesson requirements, a published version with placed lessons, solver job, audit trail
+  const reqRows = []
+  let reqIdx = 0
+  for (let cIdx = 0; cIdx < classIds.length; cIdx++) {
+    for (let suIdx = 0; suIdx < 6; suIdx++) {
+      reqRows.push({
+        id: String(sid * 1000 + reqIdx + 1), school_id: sid, class_id: classIds[cIdx],
+        subject_id: ttSubjectIds[(suIdx + cIdx) % ttSubjectIds.length],
+        teacher_id: ttTeacherIds[reqIdx % ttTeacherIds.length],
+        room_id: null, periods_per_week: 4, double_periods: 1,
+      })
+      reqIdx++
+    }
+  }
+  await batch('tt_lesson_requirements', ['id', 'school_id', 'class_id', 'subject_id', 'teacher_id', 'room_id', 'periods_per_week', 'double_periods'], reqRows)
+
+  const versionId = (await batch('tt_versions', ['school_id', 'name', 'description', 'status', 'is_current', 'version_number', 'label', 'quality', 'stats', 'created_by'],
+    [{ school_id: sid, name: 'Term 2 Draft', description: 'Seeded demo timetable', status: 'published', is_current: true, version_number: 1, label: 'v1', quality: {}, stats: {}, created_by: publishedBy }]))[0]
+
+  const lessonRows = reqRows.slice(0, 6).map((r, i) => ({
+    version_id: versionId, requirement_id: r.id, class_id: r.class_id, subject_id: r.subject_id,
+    teacher_id: r.teacher_id, room_id: null, day_index: (i % 5) + 1, period_index: (i % 6) + 1,
+    duration: 1, is_locked: false,
+  }))
+  const lessonIds = await batch('tt_lessons', ['version_id', 'requirement_id', 'class_id', 'subject_id', 'teacher_id', 'room_id', 'day_index', 'period_index', 'duration', 'is_locked'], lessonRows)
+
+  // Delete any existing solver job for this version before inserting
+  await retry(() => sql`delete from tt_solver_jobs where version_id = ${versionId}`)
+  await batch('tt_solver_jobs', ['id', 'status', 'progress', 'message', 'version_id', 'result', 'quality', 'stage', 'checks'],
+    [{ id: String(sid * 10000 + 5000 + Date.now() % 1000), status: 'completed', progress: 1, message: 'Solved in 12ms', version_id: versionId, result: { lessons: 6, conflicts: 0 }, quality: { hard: 0, soft: 1 }, stage: 'solved', checks: [] }])
+
+  await batch('tt_audit', ['user_id', 'action', 'entity', 'entity_id', 'summary', 'before', 'after', 'detail'],
+    lessonIds.map((lessonId, i) => ({
+      user_id: publishedBy, action: 'lesson.assign', entity: 'tt_lesson', entity_id: String(lessonId),
+      summary: `Assigned ${SUBJECTS[(i + 1) % SUBJECTS.length]} to ${s.classes[i % s.classes.length]}`,
+      before: {}, after: {}, detail: {},
+    })))
+
+  // Finance: payments + receipts for paid invoices, unmatched payment inbox, bank account
+  const paidInvoices = [0, 3]
+  const paidMap = []
+  for (const idx of paidInvoices) {
+    paidMap.push({ paymentId: null, studentId: studentIds[idx], invoiceId: invoiceIds[idx] })
+  }
+  const paymentIds = await batch('payments', ['payment_number', 'student_id', 'invoice_id', 'amount', 'method', 'payment_method', 'reference', 'reference_number', 'status', 'paid_at', 'reversed', 'created_by', 'received_by', 'school_id'],
+    paidMap.map((p, i) => ({
+      payment_number: `PAY-${sid}-2026-${String(200 + i)}`, student_id: p.studentId, invoice_id: p.invoiceId, amount,
+      method: 'mpesa', payment_method: 'mpesa', reference: `MPESA-${sid}-${i}`, reference_number: `MPESA-${sid}-${i}`,
+      status: 'completed', paid_at: '2026-04-10T09:30:00Z', reversed: false, created_by: publishedBy, received_by: 'Cashier', school_id: sid,
+    })))
+  await batch('finance_receipts', ['school_id', 'receipt_number', 'payment_id', 'student_id', 'amount', 'issued_at'],
+    paidMap.map((p, i) => ({ school_id: sid, receipt_number: `RCPT-${sid}-2026-${String(100 + i)}`, payment_id: paymentIds[i], student_id: p.studentId, amount, issued_at: '2026-04-10T09:35:00Z' })))
+  await batch('payment_inbox', ['school_id', 'source', 'transaction_id', 'sender_name', 'sender_phone', 'amount', 'narration', 'received_at', 'status', 'payment_channel'],
+    [{ school_id: sid, source: 'mpesa', transaction_id: `TXN-${sid}-1`, sender_name: 'John Kamau', sender_phone: '+254722111111', amount: 10000, narration: 'Fee payment', received_at: '2026-06-01T08:00:00Z', status: 'unmatched', payment_channel: 'M-PESA' },
+     { school_id: sid, source: 'mpesa', transaction_id: `TXN-${sid}-2`, sender_name: 'Mary Njeri', sender_phone: '+254722222222', amount: 25000, narration: 'Tuition term 3', received_at: '2026-06-02T10:15:00Z', status: 'unmatched', payment_channel: 'M-PESA' },
+     { school_id: sid, source: 'bank', transaction_id: `TXN-${sid}-3`, sender_name: 'Equity Bank', sender_phone: null, amount: 68000, narration: 'Bank transfer', received_at: '2026-06-03T12:00:00Z', status: 'unmatched', payment_channel: 'Bank' }])
+  await batch('bank_accounts', ['school_id', 'bank_name', 'branch_name', 'account_name', 'account_identifier', 'currency', 'opening_balance', 'status'],
+    [{ school_id: sid, bank_name: 'Equity Bank', branch_name: 'Nairobi', account_name: s.label === 'Grade' ? 'Phikila Prep' : 'Phikila Academy', account_identifier: `EQUITY-${sid}-2026`, currency: 'KES', opening_balance: 0, status: 'active' }])
 
   console.log(`school ${sid}: seeded`)
 }

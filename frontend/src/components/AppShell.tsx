@@ -6,6 +6,7 @@ import { useSchool } from '../lib/schoolContext'
 import { useToast } from './Toast'
 import { Logo, LogoMark } from './Logo'
 import { PrintFooter } from './PrintFooter'
+import { AiChatWidget } from './AiChatWidget'
 import {
   CalendarIcon,
   CheckIcon,
@@ -18,6 +19,7 @@ import {
   MenuIcon,
   MoonIcon,
   SchoolIcon,
+  SearchIcon,
   SparkIcon,
   SunIcon,
   UserIcon,
@@ -35,32 +37,80 @@ const PLATFORM_NAV: NavGroup = {
     { to: '/platform/admins', label: 'Administrators', icon: <UserIcon /> },
     { to: '/platform/audit', label: 'Audit trail', icon: <LayersIcon /> },
     { to: '/settings/ai-providers', label: 'AI providers', icon: <SparkIcon /> },
+    { to: '/settings/ai', label: 'AI Configuration', icon: <SparkIcon /> },
   ],
 }
 
+/** New grouped navigation per the Product Upgrade Plan §12 */
 const NAV: NavGroup[] = [
   {
-    label: 'Overview',
+    label: 'Home',
     items: [
       { to: '/', label: 'Dashboard', icon: <DashboardIcon /> },
-      { to: '/timetable', label: 'Timetable', icon: <CalendarIcon /> },
-      { to: '/my-timetable', label: 'My timetable', icon: <UserIcon /> },
+      { to: '/notifications', label: 'Notifications', icon: <InboxIcon /> },
+      { to: '/tasks', label: 'Tasks', icon: <CheckIcon /> },
     ],
   },
   {
-    label: 'People',
+    label: 'School',
     items: [
       { to: '/students', label: 'Students', icon: <UserIcon /> },
-      { to: '/admissions', label: 'Admissions', icon: <InboxIcon /> },
       { to: '/setup/teachers', label: 'Teachers', icon: <UserIcon /> },
+      { to: '/setup/classes', label: 'Classes', icon: <SchoolIcon /> },
+      { to: '/parents', label: 'Parents / Guardians', icon: <UserIcon /> },
+      { to: '/admissions', label: 'Admissions', icon: <InboxIcon /> },
     ],
   },
   {
     label: 'Academics',
     items: [
-      { to: '/attendance', label: 'Attendance', icon: <CheckIcon /> },
+      { to: '/setup/subjects', label: 'Subjects', icon: <LayersIcon /> },
       { to: '/examinations', label: 'Examinations', icon: <LayersIcon /> },
-      { to: '/finance', label: 'Finance', icon: <GridIcon /> },
+      { to: '/results', label: 'Results', icon: <CheckIcon /> },
+      { to: '/reports', label: 'Reports', icon: <LayersIcon /> },
+    ],
+  },
+  {
+    label: 'Attendance',
+    items: [
+      { to: '/attendance', label: 'Take attendance', icon: <CheckIcon /> },
+      { to: '/attendance/records', label: 'Attendance records', icon: <CalendarIcon /> },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { to: '/finance', label: 'Overview', icon: <GridIcon /> },
+      { to: '/finance/payment-inbox', label: 'Payments', icon: <InboxIcon /> },
+      { to: '/finance/treasury', label: 'Treasury', icon: <GridIcon /> },
+    ],
+  },
+  {
+    label: 'Timetable',
+    items: [
+      { to: '/timetable', label: 'Timetable', icon: <CalendarIcon /> },
+      { to: '/scheduling/requirements', label: 'Requirements', icon: <LayersIcon /> },
+      { to: '/scheduling/constraints', label: 'Constraints', icon: <CheckIcon /> },
+      { to: '/scheduling/generate', label: 'Generate', icon: <SparkIcon /> },
+      { to: '/versions', label: 'Versions', icon: <LayersIcon /> },
+      { to: '/analytics', label: 'Analytics', icon: <LayersIcon /> },
+    ],
+  },
+  {
+    label: 'Administration',
+    items: [
+      { to: '/setup/school', label: 'School profile', icon: <SchoolIcon /> },
+      { to: '/setup/academic-years', label: 'Academic year', icon: <CalendarIcon /> },
+      { to: '/setup/periods', label: 'Days & periods', icon: <CalendarIcon /> },
+      { to: '/setup/rooms', label: 'Rooms', icon: <GridIcon /> },
+      { to: '/setup/levels', label: 'Levels', icon: <LayersIcon /> },
+    ],
+  },
+  {
+    label: 'AI',
+    items: [
+      { to: '/scheduling/copilot', label: 'Copilot', icon: <SparkIcon /> },
+      { to: '/ocr', label: 'Document Scanner', icon: <LayersIcon /> },
     ],
   },
   {
@@ -69,57 +119,18 @@ const NAV: NavGroup[] = [
       { to: '/health', label: 'Health & welfare', icon: <CheckIcon /> },
       { to: '/inventory', label: 'Inventory', icon: <GridIcon /> },
       { to: '/library', label: 'Library', icon: <LayersIcon /> },
-    ],
-  },
-  {
-    label: 'Governance',
-    items: [
       { to: '/board', label: 'Board', icon: <SchoolIcon /> },
       { to: '/principal', label: 'Principal', icon: <UserIcon /> },
-    ],
-  },
-  {
-    label: 'Setup',
-    items: [
-      { to: '/setup/school', label: 'School', icon: <SchoolIcon /> },
-      { to: '/setup/periods', label: 'Days & periods', icon: <CalendarIcon /> },
-      { to: '/setup/subjects', label: 'Subjects', icon: <LayersIcon /> },
-      { to: '/setup/classes', label: 'Classes', icon: <SchoolIcon /> },
-      { to: '/setup/rooms', label: 'Rooms', icon: <GridIcon /> },
-      { to: '/setup/academic-years', label: 'Academic calendar', icon: <CalendarIcon /> },
-      { to: '/setup/levels', label: 'Levels', icon: <LayersIcon /> },
-    ],
-  },
-  {
-    label: 'Scheduling',
-    items: [
-      { to: '/scheduling/requirements', label: 'Lesson requirements', icon: <LayersIcon /> },
-      { to: '/scheduling/constraints', label: 'Constraints', icon: <CheckIcon /> },
-      { to: '/scheduling/generate', label: 'Generate', icon: <SparkIcon /> },
-      { to: '/scheduling/copilot', label: 'Copilot', icon: <SparkIcon /> },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { to: '/ocr', label: 'Document Scanner', icon: <LayersIcon /> },
-    ],
-  },
-  {
-    label: 'Insights',
-    items: [
-      { to: '/analytics', label: 'Analytics', icon: <LayersIcon /> },
-      { to: '/versions', label: 'Versions', icon: <SchoolIcon /> },
     ],
   },
 ]
 
 const BOTTOM_NAV: NavItem[] = [
   { to: '/', label: 'Home', icon: <DashboardIcon /> },
+  { to: '/attendance', label: 'Attendance', icon: <CheckIcon /> },
   { to: '/timetable', label: 'Timetable', icon: <CalendarIcon /> },
-  { to: '/scheduling/generate', label: 'Generate', icon: <SparkIcon /> },
-  { to: '/analytics', label: 'Analytics', icon: <LayersIcon /> },
-  { to: '/my-timetable', label: 'Mine', icon: <UserIcon /> },
+  { to: '/finance', label: 'Finance', icon: <GridIcon /> },
+  { to: '/students', label: 'Students', icon: <UserIcon /> },
 ]
 
 function isActive(pathname: string, to: string) {
@@ -130,19 +141,42 @@ function isActive(pathname: string, to: string) {
 
 /** Routes visible to each school membership role (admin/superadmin see all). */
 const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
+  admin: [
+    '/', '/notifications', '/tasks',
+    '/students', '/setup/teachers', '/setup/classes', '/parents', '/admissions',
+    '/setup/subjects', '/examinations', '/results', '/reports',
+    '/attendance', '/attendance/records',
+    '/finance', '/finance/payment-inbox', '/finance/treasury',
+    '/timetable', '/scheduling/requirements', '/scheduling/constraints', '/scheduling/generate', '/versions', '/analytics',
+    '/setup/school', '/setup/academic-years', '/setup/periods', '/setup/rooms', '/setup/levels',
+    '/scheduling/copilot', '/ocr',
+    '/health', '/inventory', '/library', '/board', '/principal',
+    '/profile',
+  ],
   academics: [
-    '/', '/timetable', '/my-timetable',
-    '/students', '/admissions', '/setup/teachers',
-    '/attendance', '/examinations',
-    '/health', '/inventory', '/library',
-    '/board', '/principal',
-    '/setup/school', '/setup/periods', '/setup/subjects', '/setup/classes', '/setup/rooms',
-    '/setup/academic-years', '/setup/levels',
-    '/scheduling/requirements', '/scheduling/constraints', '/scheduling/generate', '/scheduling/copilot',
+    '/', '/notifications', '/tasks',
+    '/students', '/setup/teachers', '/setup/classes', '/parents', '/admissions',
+    '/setup/subjects', '/examinations', '/results', '/reports',
+    '/attendance', '/attendance/records',
+    '/timetable', '/scheduling/requirements', '/scheduling/constraints', '/scheduling/generate', '/versions', '/analytics',
+    '/setup/school', '/setup/academic-years', '/setup/periods', '/setup/rooms', '/setup/levels',
+    '/scheduling/copilot', '/ocr',
+    '/health', '/inventory', '/library', '/board', '/principal',
+    '/profile',
+  ],
+  finance: [
+    '/', '/notifications', '/tasks',
+    '/finance', '/finance/payment-inbox', '/finance/treasury',
+    '/students',
     '/ocr', '/analytics', '/versions', '/profile',
   ],
-  finance: ['/', '/my-timetable', '/finance', '/finance/payment-inbox', '/finance/treasury', '/ocr', '/analytics', '/versions', '/profile'],
-  teacher: ['/', '/timetable', '/my-timetable', '/attendance', '/examinations', '/ocr', '/analytics', '/versions', '/profile'],
+  teacher: [
+    '/', '/notifications', '/tasks',
+    '/attendance', '/attendance/records',
+    '/timetable', '/my-timetable',
+    '/examinations', '/results',
+    '/ocr', '/analytics', '/versions', '/profile',
+  ],
   student: ['/', '/my-timetable', '/profile'],
   parent: ['/', '/my-timetable', '/profile'],
 }
@@ -257,6 +291,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const navigation = (
     <nav className="sidebar__nav" aria-label="Main">
+      <div className="sidebar__search-hint" role="button" tabIndex={0} aria-label="Search (Ctrl+K)">
+        <SearchIcon width={16} height={16} />
+        <span>Search…</span>
+        <kbd>⌘K</kbd>
+      </div>
       {groups.map((group) => (
         <div className="sidebar__group" key={group.label}>
           <p className="sidebar__group-label">{group.label}</p>
@@ -316,6 +355,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar sidebar--desktop">
         <div className="sidebar__brand">
           <Logo size={34} tone="dark" />
+          {activeSchool && (
+            <div className="sidebar__brand-school">
+              <span className="sidebar__brand-school-name">{activeSchool.name}</span>
+            </div>
+          )}
         </div>
         {navigation}
         {accountBlock}
@@ -436,6 +480,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <PrintFooter />
       </div>
+
+      <AiChatWidget />
     </div>
   )
 }
