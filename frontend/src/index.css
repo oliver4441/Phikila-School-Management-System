@@ -7,41 +7,42 @@
   --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Playfair Display', Georgia, serif;
 
-  --color-bg: #f5f3ec;
+  --color-bg: #f0f2f5;
   --color-surface: #ffffff;
-  --color-surface-muted: #faf9f5;
-  --color-ink: #14231d;
-  --color-ink-muted: #5a6660;
-  --color-line: #dcd8cc;
-  --color-line-strong: #c6c1b1;
+  --color-surface-muted: #f7f8fa;
+  --color-ink: #111827;
+  --color-ink-muted: #6b7280;
+  --color-line: #e5e7eb;
+  --color-line-strong: #d1d5db;
 
-  --color-primary: #0f2a47;
-  --color-primary-strong: #0a1e34;
-  --color-primary-soft: #e7eef5;
-  --color-accent: #0b7f60;
+  --color-primary: #1e3a5f;
+  --color-primary-strong: #152c4a;
+  --color-primary-soft: #e8eef6;
+  --color-accent: #059669;
   /* brand */
-  --brand-navy: #0f2a47;
-  --brand-navy-deep: #0a1e34;
-  --brand-emerald: #12a47c;
-  --brand-emerald-light: #2bc194;
-  --brand-gold: #e0a93b;
+  --brand-navy: #1e3a5f;
+  --brand-navy-deep: #142640;
+  --brand-emerald: #10b981;
+  --brand-emerald-light: #34d399;
+  --brand-gold: #f59e0b;
+  --brand-gold-light: #fbbf24;
 
-  --color-success: #096a50;
-  --color-success-soft: #e4f1e9;
-  --color-warning: #8a5a10;
-  --color-warning-soft: #fbf0dc;
-  --color-danger: #9a2f24;
-  --color-danger-soft: #fbe8e5;
-  --color-info: #1c4f74;
-  --color-info-soft: #e5eff6;
+  --color-success: #059669;
+  --color-success-soft: #d1fae5;
+  --color-warning: #d97706;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-soft: #dbeafe;
 
   --radius-sm: 0.4rem;
   --radius-md: 0.65rem;
   --radius-lg: 1rem;
 
-  --shadow-sm: 0 1px 2px rgba(20, 35, 29, 0.06);
-  --shadow-md: 0 6px 20px rgba(20, 35, 29, 0.08);
-  --shadow-lg: 0 18px 45px rgba(20, 35, 29, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -59,6 +60,88 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+}
+
+/* ---- Dark mode (system preference) ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0f1117;
+    --color-surface: #1a1d27;
+    --color-surface-muted: #232733;
+    --color-ink: #f0f2f5;
+    --color-ink-muted: #9ca3af;
+    --color-line: #2d3348;
+    --color-line-strong: #3d4460;
+
+    --color-primary: #60a5fa;
+    --color-primary-strong: #93bbfd;
+    --color-primary-soft: rgba(96, 165, 250, 0.12);
+    --color-accent: #34d399;
+
+    --brand-navy: #60a5fa;
+    --brand-navy-deep: #1e3a5f;
+    --brand-emerald: #34d399;
+    --brand-emerald-light: #6ee7b7;
+    --brand-gold: #fbbf24;
+    --brand-gold-light: #fcd34d;
+
+    --color-success: #34d399;
+    --color-success-soft: rgba(52, 211, 153, 0.12);
+    --color-warning: #fbbf24;
+    --color-warning-soft: rgba(251, 191, 36, 0.12);
+    --color-danger: #f87171;
+    --color-danger-soft: rgba(248, 113, 113, 0.12);
+    --color-info: #60a5fa;
+    --color-info-soft: rgba(96, 165, 250, 0.12);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ---- Dark mode (explicit toggle) ---- */
+[data-theme="dark"] {
+  --color-bg: #0f1117;
+  --color-surface: #1a1d27;
+  --color-surface-muted: #232733;
+  --color-ink: #f0f2f5;
+  --color-ink-muted: #9ca3af;
+  --color-line: #2d3348;
+  --color-line-strong: #3d4460;
+
+  --color-primary: #60a5fa;
+  --color-primary-strong: #93bbfd;
+  --color-primary-soft: rgba(96, 165, 250, 0.12);
+  --color-accent: #34d399;
+
+  --brand-navy: #60a5fa;
+  --brand-navy-deep: #1e3a5f;
+  --brand-emerald: #34d399;
+  --brand-emerald-light: #6ee7b7;
+  --brand-gold: #fbbf24;
+  --brand-gold-light: #fcd34d;
+
+  --color-success: #34d399;
+  --color-success-soft: rgba(52, 211, 153, 0.12);
+  --color-warning: #fbbf24;
+  --color-warning-soft: rgba(251, 191, 36, 0.12);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.12);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
   color-scheme: light;
 }
 
@@ -1001,6 +1084,16 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar__account-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sidebar__account-actions .button--ghost {
+  flex: 1;
 }
 
 .sidebar__account .button--ghost {
@@ -6312,4 +6405,156 @@ a {
     width: calc(100vw - 1rem);
     max-height: calc(100vh - 2rem);
   }
+}
+
+/* ==========================================================================
+   Dark mode component overrides
+   ========================================================================== */
+
+/* Sidebar is always dark-themed, deepen in dark mode */
+[data-theme="dark"] .sidebar {
+  background: #0b1120;
+}
+
+[data-theme="dark"] .sidebar__link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .sidebar__link--active {
+  background: rgba(96, 165, 250, 0.15);
+  border-left-color: var(--brand-emerald);
+}
+
+/* Auth shell dark */
+[data-theme="dark"] .auth-shell__brand {
+  background: #0b1120;
+}
+
+[data-theme="dark"] .auth-shell__brand .logo__word { color: #f0f2f5; }
+[data-theme="dark"] .auth-shell__brand .logo__sub { color: #9ca3af; }
+
+[data-theme="dark"] .auth-shell__wordmark span {
+  color: #6b7280;
+}
+
+/* Tables dark */
+[data-theme="dark"] .table-wrap {
+  border-color: var(--color-line);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+/* Forms dark */
+[data-theme="dark"] .input {
+  background: var(--color-surface);
+  border-color: var(--color-line);
+  color: var(--color-ink);
+}
+
+[data-theme="dark"] .input:focus {
+  border-color: var(--brand-emerald);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+}
+
+[data-theme="dark"] .checkbox input {
+  accent-color: var(--brand-emerald);
+}
+
+/* Skeleton dark */
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, #232733 25%, #2d3348 50%, #232733 75%);
+  background-size: 200% 100%;
+}
+
+/* Badge dark */
+[data-theme="dark"] .badge {
+  border-color: var(--color-line);
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
+}
+
+/* Tabs dark */
+[data-theme="dark"] .tab--active {
+  background: var(--brand-navy);
+  color: #fff;
+}
+
+/* Dialog dark */
+[data-theme="dark"] .dialog-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Toast dark */
+[data-theme="dark"] .toast {
+  border-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+/* Topbar dark */
+[data-theme="dark"] .topbar {
+  border-bottom-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+/* Bottom nav dark */
+[data-theme="dark"] .bottom-nav {
+  border-top-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+[data-theme="dark"] .bottom-nav__item--active {
+  color: var(--brand-emerald);
+  box-shadow: inset 0 2px 0 var(--brand-emerald);
+}
+
+/* Summary cards dark */
+[data-theme="dark"] .summary-card__link:hover {
+  background: var(--color-surface-muted);
+}
+
+/* Alert dark */
+[data-theme="dark"] .alert--success {
+  border-color: rgba(52, 211, 153, 0.2);
+  background: var(--color-success-soft);
+  color: #a7f3d0;
+}
+
+[data-theme="dark"] .alert--error {
+  border-color: rgba(248, 113, 113, 0.2);
+  background: var(--color-danger-soft);
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .alert--info {
+  border-color: rgba(96, 165, 250, 0.2);
+  background: var(--color-info-soft);
+  color: #93bbfd;
+}
+
+/* Chip toggle dark */
+[data-theme="dark"] .chip-toggle--on {
+  border-color: var(--brand-emerald);
+  background: var(--color-success-soft);
+}
+
+/* Palette dark */
+[data-theme="dark"] .palette__item-icon {
+  background: var(--color-success-soft);
+  color: var(--brand-emerald);
+}
+
+/* Focus ring — emerald for dark mode */
+[data-theme="dark"] :focus-visible {
+  outline-color: var(--brand-emerald);
+}
+
+/* Now card */
+[data-theme="dark"] .now-card {
+  border-left-color: var(--brand-emerald);
+}
+
+[data-theme="dark"] .now-card__label {
+  color: var(--brand-emerald);
 }
