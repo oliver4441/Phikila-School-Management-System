@@ -9,6 +9,10 @@ export const schedulingRoutes = new Hono<{ Bindings: Bindings }>()
 
 const NOT_AVAILABLE = 'Timetable generation and AI assistant features are not available on this deployment.'
 
+function solverEnabled(env: Bindings): boolean {
+  return env.SOLVER_ENABLED === 'true'
+}
+
 const TEACHER_SELECT = `
   select id, name, coalesce(code, '') as code, email,
          coalesce(department, null) as department,
@@ -99,7 +103,7 @@ schedulingRoutes.get('/me', async (c) => {
     role,
     teacher_id: null,
     class_id: null,
-    solver_available: false,
+    solver_available: solverEnabled(c.env),
   })
 })
 
@@ -804,7 +808,7 @@ schedulingRoutes.get('/dashboard', async (c) => {
       action: r.action,
       summary: r.summary,
     })),
-    solver_available: false,
+    solver_available: solverEnabled(c.env),
   })
 })
 
@@ -948,7 +952,7 @@ schedulingRoutes.get('/timetable/view', async (c) => {
   }
   let lessons: Record<string, unknown>[] = []
   if (version) {
-    let where = 'l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})'
+    let where = `l.version_id = $1 and l.version_id in (select id from tt_versions where school_id = ${sid})`
     const params: string[] = [String(version.id)]
     if (targetId && (scope === 'class' || scope === 'teacher' || scope === 'room')) {
       const col = scope === 'class' ? 'l.class_id' : scope === 'teacher' ? 'l.teacher_id' : 'l.room_id'

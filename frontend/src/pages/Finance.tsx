@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
-import { Badge, EmptyState, LoadingBlock } from '../components/States'
+import { Badge, EmptyState, LoadingBlock, Spinner } from '../components/States'
 import { friendlyApiError } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { finance, type FeeStructure, type Invoice, type Payment, type FinanceOverview } from '../lib/finance'
+import { streamAnalytics } from '../lib/ai'
 
 export default function FinancePage() {
+  const { notify } = useToast()
   const [overview, setOverview] = useState<FinanceOverview | null>(null)
   const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -17,6 +19,9 @@ export default function FinancePage() {
   const [showNewFee, setShowNewFee] = useState(false)
   const [showNewInvoice, setShowNewInvoice] = useState(false)
   const [showNewPayment, setShowNewPayment] = useState(false)
+  const [aiSummary, setAiSummary] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [showAi, setShowAi] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -62,6 +67,28 @@ export default function FinancePage() {
       {loading ? <LoadingBlock label="Loading finance" rows={4} /> : (
         <>
           {activeTab === 'overview' && overview && (
+            <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-3)' }}>
+              <button
+                className="button button--secondary button--sm"
+                onClick={() => {
+                  if (aiLoading) return
+                  setShowAi(true)
+                  setAiLoading(true)
+                  setAiSummary('')
+                  streamAnalytics({
+                    endpoint: '/analytics/finance',
+                    body: {},
+                    onToken: (token) => setAiSummary((prev) => prev + token),
+                    onDone: () => setAiLoading(false),
+                    onError: (detail) => { setAiLoading(false); notify(detail, 'error') },
+                  })
+                }}
+                disabled={aiLoading}
+              >
+                {aiLoading ? <><Spinner label="Analyzing" /> Analyzing…</> : '✦ AI Summary'}
+              </button>
+            </div>
             <div className="summary-grid" style={{ marginBottom: 'var(--space-4)' }}>
               {[
                 { label: 'Total Invoiced', value: `KES ${Number(overview.total_invoiced).toLocaleString()}` },
@@ -77,6 +104,25 @@ export default function FinancePage() {
                 </div>
               ))}
             </div>
+
+            {showAi && (
+              <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', border: '1px solid var(--color-line)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>✦ AI Finance Summary</h3>
+                  <button className="button button--ghost button--sm" onClick={() => { setShowAi(false); setAiSummary('') }}>✕ Dismiss</button>
+                </div>
+                {aiLoading && !aiSummary && (
+                  <p style={{ color: 'var(--color-ink-muted)', fontSize: '0.875rem' }}><Spinner label="Analyzing finances" /> Analyzing finances…</p>
+                )}
+                {aiSummary && (
+                  <div
+                    style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
+                    dangerouslySetInnerHTML={{ __html: aiSummary.replace(/\n/g, '<br/>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }}
+                  />
+                )}
+              </div>
+            )}
+            </>
           )}
 
           {activeTab === 'fees' && (

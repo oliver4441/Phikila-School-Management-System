@@ -66,6 +66,54 @@ export function DashboardPage() {
       {(!school && !schoolQuery.loading) && <Alert tone="info" title="Complete your school profile"><Link to="/setup/school">Set up your school profile</Link> to unlock the full operations overview.</Alert>}
       {data && !data.solver_available && <Alert tone="error" title="Scheduling engine unavailable">Timetables cannot be generated until the optimisation engine is installed on the server.</Alert>}
 
+      {/* Needs Attention section */}
+      <section className="card section" aria-labelledby="attention-heading" style={{ marginBottom: 'var(--space-4)' }}>
+        <div className="dashboard-panel__head">
+          <div>
+            <p className="dashboard-panel__eyebrow" style={{ color: 'var(--color-danger)' }}>⚠ Requires Action</p>
+            <h2 className="dashboard-panel__title" id="attention-heading">Needs Attention</h2>
+          </div>
+        </div>
+        <div className="dashboard-attention">
+          {hard > 0 && (
+            <Link className="dashboard-attention__item dashboard-attention__item--error" to="/scheduling/constraints">
+              <span className="dashboard-attention__icon">⚠️</span>
+              <div>
+                <span className="dashboard-attention__title">{hard} timetable conflict{hard > 1 ? 's' : ''}</span>
+                <span className="dashboard-attention__detail">Resolve scheduling overlaps</span>
+              </div>
+            </Link>
+          )}
+          {(data?.lessons.unassigned ?? 0) > 0 && (
+            <Link className="dashboard-attention__item dashboard-attention__item--warning" to="/scheduling/requirements">
+              <span className="dashboard-attention__icon">📋</span>
+              <div>
+                <span className="dashboard-attention__title">{data?.lessons.unassigned} unassigned lessons</span>
+                <span className="dashboard-attention__detail">Assign teachers to lessons</span>
+              </div>
+            </Link>
+          )}
+          {financeQuery.data && financeQuery.data.pending_count > 0 && (
+            <Link className="dashboard-attention__item dashboard-attention__item--warning" to="/finance/payment-inbox">
+              <span className="dashboard-attention__icon">💰</span>
+              <div>
+                <span className="dashboard-attention__title">{financeQuery.data.pending_count} pending payment{financeQuery.data.pending_count > 1 ? 's' : ''}</span>
+                <span className="dashboard-attention__detail">Review and process payments</span>
+              </div>
+            </Link>
+          )}
+          {hard === 0 && (data?.lessons.unassigned ?? 0) === 0 && (!financeQuery.data || financeQuery.data.pending_count === 0) && (
+            <div className="dashboard-attention__item dashboard-attention__item--success">
+              <span className="dashboard-attention__icon">✅</span>
+              <div>
+                <span className="dashboard-attention__title">All clear</span>
+                <span className="dashboard-attention__detail">No immediate issues requiring attention</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
       <section className="dashboard-metrics" aria-label="Key school metrics">
         <Metric label="Students" value={studentsQuery.data?.total ?? 0} detail="Total enrolled records" loading={studentsQuery.loading} icon={<UserIcon />} tone="navy" to="/students" />
         <Metric label="Teachers" value={data?.counts.teachers ?? 0} detail="Staff available for scheduling" loading={loading} icon={<UserIcon />} tone="green" to="/setup/teachers" />
