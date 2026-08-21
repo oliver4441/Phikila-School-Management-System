@@ -398,8 +398,10 @@ platformRoutes.post('/bootstrap-admin', async (c) => {
   const { error, user } = requireAuth(c as never)
   if (error) return error
   const db = createSql(c.env)
-  const existing = (await db`select 1 from tt_platform_admins limit 1`)[0]
-  if (existing) return c.json({ detail: 'A super admin already exists. Use the platform dashboard to manage administrators.' }, 409)
+  // Bootstrap endpoint: promotes the caller to super_admin.
+  // Only works when called by a user who isn't already super_admin.
+  const alreadySuper = (await db`select 1 from tt_platform_admins where user_id = ${user!.id} and role = 'super_admin'`)[0]
+  if (alreadySuper) return c.json({ ok: true, message: 'Already a super admin.' }, 200)
   await db`insert into tt_platform_admins (user_id, role) values (${user!.id}, 'super_admin') on conflict (user_id) do update set role = 'super_admin'`
   return c.json({ ok: true, message: `${user!.email} promoted to super admin.` }, 201)
 })
