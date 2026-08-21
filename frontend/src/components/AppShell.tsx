@@ -231,7 +231,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (allowed && !group.items.some((i) => allowed.has(i.to))) continue
       for (const item of group.items) {
         if (allowed && !allowed.has(item.to)) continue
-        flat.push({ to: item.to, label: item.label, group: group.label })
+        flat.push({ to: item.to, label: item.label, group: group.label, icon: item.icon })
       }
     }
     return flat

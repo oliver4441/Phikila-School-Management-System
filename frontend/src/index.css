@@ -6249,6 +6249,19 @@ a {
   background: var(--color-primary-soft);
 }
 
+.palette__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+  color: var(--brand-navy);
+  font-size: 0.85rem;
+}
+
 .palette__item-label {
   font-size: 0.9rem;
   font-weight: 600;

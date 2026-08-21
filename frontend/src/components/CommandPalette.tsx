@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { normalisePath, useNavigate, useRouter } from '../lib/router'
-import { SearchIcon, CloseIcon } from './icons'
+import { SearchIcon } from './icons'
 
 /** Every entry the palette can jump to. */
 export type PaletteItem = {
   to: string
   label: string
   group: string
+  icon?: ReactNode
 }
 
 type Props = {
@@ -141,6 +142,7 @@ export function CommandPalette({ open, onClose, items }: Props) {
                 onClick={() => goTo(item.to)}
                 onMouseEnter={() => setActiveIdx(idx)}
               >
+                {item.icon && <span className="palette__item-icon" aria-hidden="true">{item.icon}</span>}
                 <span className="palette__item-label">{item.label}</span>
                 <span className="palette__item-group">{item.group}</span>
               </button>
