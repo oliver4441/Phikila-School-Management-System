@@ -3,6 +3,7 @@ import { Link, normalisePath, useNavigate, useRouter } from '../lib/router'
 import { displayName, useAuth } from '../lib/auth'
 import { usePlatformSession } from '../lib/session'
 import { useSchool } from '../lib/schoolContext'
+import { useTheme } from '../lib/theme'
 import { useToast } from './Toast'
 import { Logo, LogoMark } from './Logo'
 import { PrintFooter } from './PrintFooter'
@@ -343,6 +344,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     </nav>
   )
 
+  const { theme, cycle: cycleTheme } = useTheme()
+
   const accountBlock = (
     <div className="sidebar__account">
       <div className="sidebar__account-profile">
@@ -352,15 +355,26 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="sidebar__account-email">{user?.email}</p>
         </div>
       </div>
-      <button
-        type="button"
-        className="button button--ghost button--block"
-        onClick={handleSignOut}
-        disabled={signingOut}
-      >
-        <LogOutIcon width={18} height={18} />
-        {signingOut ? 'Signing out…' : 'Sign out'}
-      </button>
+      <div className="sidebar__account-actions">
+        <button
+          type="button"
+          className="icon-button icon-button--subtle"
+          onClick={cycleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : theme === 'light' ? 'Switch to dark mode' : 'Switch to system mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : theme === 'light' ? 'Switch to dark mode' : 'Switch to system mode'}
+        >
+          {theme === 'dark' ? <SunIcon width={18} height={18} /> : <MoonIcon width={18} height={18} />}
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--block"
+          onClick={handleSignOut}
+          disabled={signingOut}
+        >
+          <LogOutIcon width={18} height={18} />
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
     </div>
   )
 

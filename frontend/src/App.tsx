@@ -5,6 +5,7 @@ import { StitchRoute, isStitchPath } from './stitch/routes'
 import { RouterProvider, normalisePath, useNavigate, useRouter } from './lib/router'
 import { ToastProvider } from './components/Toast'
 import { SchoolProvider } from './lib/schoolContext'
+import { ThemeProvider } from './lib/theme'
 import { AppShell } from './components/AppShell'
 import { FullPageLoader } from './components/States'
 import { LandingPage } from './pages/LandingPage'
@@ -22,4 +23,4 @@ function routeFor(pathname:string):ReactNode{switch(pathname){case '/':return <D
 function AccessGate({children}:{children:ReactNode}){const{session,loading,error}=usePlatformSession();if(loading)return <FullPageLoader label="Checking your access…"/>;if(error)return <>{children}</>;if(session&&!session.has_access)return <Suspense fallback={<FullPageLoader label="Loading…"/>}><AwaitingApprovalPage/></Suspense>;return <>{children}</>}
 function ProtectedRoutes({pathname}:{pathname:string}){if(isStitchPath(pathname))return <RequireAuth><AccessGate><StitchRoute slug={pathname.slice(1)}/></AccessGate></RequireAuth>;return <RequireAuth><AccessGate><AppShell><Suspense fallback={<FullPageLoader label="Loading page…"/>}>{routeFor(pathname)}</Suspense></AppShell></AccessGate></RequireAuth>}
 function Routes(){const{pathname}=useRouter();const path=normalisePath(pathname);if(PUBLIC_ROUTES.has(path)){const publicPage=path==='/login'?<LoginPage/>:path==='/signup'?<SignUpPage/>:path==='/forgot-password'?<ForgotPasswordPage/>:<ResetPasswordPage/>;return <RedirectIfSignedIn>{publicPage}</RedirectIfSignedIn>}if(path==='/')return <LandingRedirect/>;return <ProtectedRoutes pathname={path}/>}
-export default function App(){return <RouterProvider><ToastProvider><AuthProvider><PlatformSessionProvider><SchoolProvider><Routes/></SchoolProvider></PlatformSessionProvider></AuthProvider></ToastProvider></RouterProvider>}
+export default function App(){return <RouterProvider><ThemeProvider><ToastProvider><AuthProvider><PlatformSessionProvider><SchoolProvider><Routes/></SchoolProvider></PlatformSessionProvider></AuthProvider></ToastProvider></ThemeProvider></RouterProvider>}
