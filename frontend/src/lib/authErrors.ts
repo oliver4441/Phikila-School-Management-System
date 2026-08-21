@@ -13,22 +13,22 @@ export function friendlyAuthError(error: unknown, fallback: string): string {
 
   if (!message) return fallback
 
-  if (message.includes('invalid login credentials') || message.includes('invalid_credentials')) {
+  if (message.includes('invalid login credentials') || message.includes('invalid_credentials') || message.includes('invalid-credential') || message.includes('wrong-password') || message.includes('user-not-found')) {
     return 'That email and password combination is not correct. Check both and try again.'
   }
-  if (message.includes('email not confirmed')) {
+  if (message.includes('email not confirmed') || message.includes('email-not-confirmed') || message.includes('user-disabled')) {
     return 'This email address has not been confirmed yet. Open the confirmation link we sent you, then sign in.'
   }
-  if (message.includes('user already registered') || message.includes('already been registered')) {
+  if (message.includes('user already registered') || message.includes('already been registered') || message.includes('email-already-in-use')) {
     return 'An account already exists for this email address. Try signing in instead.'
   }
-  if (message.includes('password should be') || message.includes('password is too weak')) {
+  if (message.includes('password should be') || message.includes('password is too weak') || message.includes('weak-password')) {
     return 'Choose a stronger password with at least 8 characters.'
   }
-  if (message.includes('signups not allowed') || message.includes('signup is disabled')) {
+  if (message.includes('signups not allowed') || message.includes('signup is disabled') || message.includes('operation-not-allowed')) {
     return 'New accounts are not open for self sign-up. Ask a school administrator to create your account.'
   }
-  if (message.includes('rate limit') || message.includes('too many requests') || message.includes('over_email_send')) {
+  if (message.includes('rate limit') || message.includes('too many requests') || message.includes('over_email_send') || message.includes('too-many-requests')) {
     return 'Too many attempts. Wait a minute before trying again.'
   }
   if (message.includes('same as the old password') || message.includes('should be different')) {
@@ -37,11 +37,19 @@ export function friendlyAuthError(error: unknown, fallback: string): string {
   if (
     message.includes('token has expired') ||
     message.includes('invalid or has expired') ||
-    message.includes('otp_expired')
+    message.includes('otp_expired') ||
+    message.includes('invalid-action-code') ||
+    message.includes('expired-action-code')
   ) {
     return 'This link has expired. Request a new password reset email.'
   }
-  if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('load failed')) {
+  if (message.includes('popup-closed-by-user') || message.includes('cancelled-popup-request')) {
+    return 'Sign in was cancelled.'
+  }
+  if (message.includes('account-exists-with-different-credential') || message.includes('credential-already-in-use')) {
+    return 'An account already exists for this email. Sign in with that provider instead.'
+  }
+  if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('load failed') || message.includes('auth/network-request-failed')) {
     return 'We could not reach the server. Check your connection and try again.'
   }
   if (message.includes('please sign in again') || message.includes('jwt') || message.includes('401')) {

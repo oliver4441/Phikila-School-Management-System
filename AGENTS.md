@@ -1,145 +1,105 @@
 # AGENTS.md
 
-# IMPORTANT: Independent Phikila Deployment
+Phikila School Management System. The production stack is:
 
-This repository is the **independent Phikila deployment owned by `oliver4441`**.
+- **Backend:** Cloudflare Worker (`workers/`) — Hono + `@neondatabase/serverless`
+  against Neon Postgres. Deployed at `https://phikila-backend.kipkiruigideon890.workers.dev`.
+- **Frontend:** React + Vite (`frontend/`), deployed to Vercel
+  (`https://phikila-school-system.vercel.app`).
+- **Auth:** Firebase Auth (`omix-systems-cd1af`). The browser signs in with
+  Firebase (email/password or Google), exchanges the ID token for the worker's
+  own HS256 JWT, and sends that JWT on every API call.
+- **Media:** R2 bucket `phikila-storage`, bound as `MEDIA` in `wrangler.toml`.
 
-## Repository identity and location
-
-- **Current repository (WORK HERE):** `oliver4441/Phikila-School-Management-System`
-- **Current repository URL:** `https://github.com/oliver4441/Phikila-School-Management-System`
-- **Current repository owner:** `oliver4441`
-- **Default branch:** `main`
-- **Upstream/original repository:** `langattr-cloud/Phikila-School-Management-System`
-- **Upstream URL:** `https://github.com/langattr-cloud/Phikila-School-Management-System`
-
-### CRITICAL AGENT RULE
-
-When operating in this project, treat **`oliver4441/Phikila-School-Management-System` as the ONLY repository to modify**.
-
-Do NOT push commits, create branches, edit files, create releases, modify Actions, or otherwise mutate `langattr-cloud/Phikila-School-Management-System` unless the user explicitly gives a separate instruction to work on upstream.
-
-The `langattr-cloud` repository is **UPSTREAM/REFERENCE ONLY** for this independent deployment.
-
-Do not confuse:
-
-```text
-UPSTREAM / REFERENCE
-langattr-cloud/Phikila-School-Management-System
-
-                ↓ one-way reference / selective sync
-
-CURRENT / AUTHORITATIVE FOR THIS DEPLOYMENT
-oliver4441/Phikila-School-Management-System
-```
-
-## Independent infrastructure boundary
-
-This repository is being prepared for infrastructure owned/controlled by `oliver4441`.
-
-Target architecture:
-
-```text
-GitHub
-└── oliver4441/Phikila-School-Management-System
-    │
-    ├── Vercel
-    │   └── Frontend deployment
-    │
-    ├── Cloudflare
-    │   ├── DNS/CDN/security
-    │   ├── Workers where appropriate
-    │   └── R2 for object/file storage
-    │
-    └── Neon
-        └── PostgreSQL database
-```
-
-The independent deployment must NOT depend on Langattr's:
-
-- Vercel project
-- Cloudflare account/project
-- Supabase project/database
-- Supabase Storage
-- production secrets
-- production API endpoints
-- deployment credentials
-
-Do not reuse infrastructure credentials or production environment variables from upstream.
-
-## Database boundary
-
-The target database is **Neon PostgreSQL owned/controlled by `oliver4441`**.
-
-Use the `DATABASE_URL` environment variable.
-
-Never hard-code database credentials.
-
-Never connect development or production work in this repository to Langattr's Supabase database.
-
-The repository uses Alembic for schema migrations. Before changing migration behavior, inspect `alembic/env.py`, `alembic.ini`, and `alembic/versions/`.
-
-## Current backend architecture
-
-FastAPI backend for the Phikila School Management System (React frontend lives in the sibling `frontend/` dir). Modular architecture under `app/modules/<name>/` — each module has `models.py`, `schemas.py`, `router.py`, plus optional `services.py`/`repository.py`.
+The legacy FastAPI app (`app/`, `alembic/`, `requirements.txt`) is dead code —
+ignored, not deployed. Never migrate it or import it.
 
 ## Commands
 
 ```bash
-pip install -r requirements.txt
-alembic upgrade head          # runs against the DATABASE_URL configured in the environment
-python seed_admin.py
-uvicorn app.main:app --reload # server on :8000, docs at /docs
+# Backend (workers/) — note the registry/DNS quirks below
+cd workers
+npm run typecheck                  # tsc --noEmit
+./node_modules/.bin/wrangler dev   # local worker on :8787
+./node_modules/.bin/wrangler deploy
+./node_modules/.bin/wrangler secret put DATABASE_URL   # Neon connection string
+./node_modules/.bin/wrangler secret put JWT_SECRET
+
+# Frontend (frontend/)
+cd frontend
+cp .env.example .env.local         # VITE_FIREBASE_* + VITE_API_URL
+npm run dev                        # dev server proxies /api + /health to :8787
+npm run build                      # tsc -b && vite build
+
+# Deploy frontend to Vercel (run inside frontend/)
+vercel deploy --prod --yes
 ```
 
-There is **no test framework** (no pytest config, no tests/). `test_timetable_route.py` is an ad-hoc ASGI scope script; don't treat it as a suite.
+## Environment quirks (do not fight these)
 
-## Database gotchas
-
-- The original project used a **Supabase cloud database**. That is upstream infrastructure and must not be treated as the database for this independent deployment.
-- `alembic/env.py` overrides `alembic.ini`'s `sqlalchemy.url` from the environment. Verify `DATABASE_URL` before running migrations.
-- `.env` may contain credentials; never expose, commit, or log them.
-- `alembic/versions/` may contain stale `*.bak` files — not applied migrations unless explicitly verified.
-- Before running migrations against any database, confirm the database host belongs to the independent environment.
+- The machine's IPv6 route is broken. Node processes that open sockets
+  (`wrangler`, `vercel`, node scripts) must run with
+  `NODE_OPTIONS=--dns-result-order=ipv4first`. `curl` is fine without it.
+- The npm registry hangs. Prefer local binaries over `npx`, and always pass
+  `--registry=https://registry.npmjs.org/` when installing. `wrangler r2 bucket
+  create` also hangs/fails — create buckets via the Cloudflare API instead
+  (the bucket already exists; don't re-create it).
+- The Worker reaches Neon fine; the problem is only local DNS. Smoke-test DB
+  from the deployed worker via `GET /debug/db` on the workers.dev URL.
 
 ## Router prefix gotcha
 
-Two mounting styles in `app/main.py` — check a module's router before adding routes:
+Mounting style in `workers/src/index.ts`:
 
-- Routers that **declare their own prefix** (`/users`, `/school`, `/departments`, `/subjects`, `/students`, `/class_register`, `/timetable`, `/finance`): mounted with only `/api/v1` in `main.py`.
-- Routers with **no prefix** (`auth`, `academics`, `teachers`, `examinations`, `reports`): the full path segment is added in `main.py` (`/api/v1/auth`, `/api/v1/teachers`, etc.).
+- Routers that declare their own prefix (`school`, `platform`, `students`,
+  `teachers`, `attendance`, `examinations`, `finance`, `scheduling`,
+  `admissions`, `health`, `inventory`, `library`, `board`, `principal`): mounted
+  with `app.route('/api/v1/<name>', routes)`.
+- The auth router declares no prefix; its full path is added in `index.ts`
+  (`app.route('/api/v1/auth', authRoutes)`).
 
-Never add a prefix to a no-prefix router, and never mount a prefixed router with a duplicate segment.
+Never add a prefix to the auth router, and never mount a prefixed router with a
+duplicate segment.
 
-## Auth & hashing
+## Auth flow (worker)
 
-- JWT login: `POST /api/v1/auth/login` (OAuth2 form). `create_access_token` encodes the user's **email** as `sub`.
-- The only correct password hashing is `app/modules/authentication/security.py` (bcrypt). `app/core/security.py` uses `sha256_crypt` and is dead/inconsistent — never import it.
-- Use `from app.modules.authentication.dependencies import get_current_user` for protected routes (re-exports the working implementation from `tokens.py`).
+- Firebase email/password and Google sign-in happen entirely in the browser.
+  The worker never sees Firebase credentials.
+- `POST /api/v1/auth/firebase` receives `{ id_token }`, verifies it against the
+  Firebase tokeninfo endpoint, upserts the user into `users` (keyed by
+  `firebase_uid`, `id` default `gen_random_uuid()`), and returns
+  `{ access_token, user }`.
+- The backend JWT is HS256 signed with `JWT_SECRET` (7-day expiry), `sub` = the
+  internal `users.id` UUID. `jwt.ts` is the only correct JWT implementation.
+- `authMiddleware` is lenient: it attaches `authUser` when a valid token is
+  present and passes through otherwise. `requireAuth` (in `src/routes/auth.ts`)
+  is what returns 401. Add `requireAuth` to any route that must reject
+  anonymous callers.
+- `src/lib/firebase.ts` verifies ID tokens; `src/lib/http.ts` has the CORS
+  middleware (wildcard origin — fine because the frontend uses bearer tokens,
+  never cookies).
 
-## Adding a module or model
+## Database
 
-- New modules: create under `app/modules/<name>/`, mount the router in `app/main.py`, and **import the models in `alembic/env.py`** or autogenerate won't see them.
-- `static/` is auto-created and served at `/static` (school logo uploads).
+- Neon Postgres via `@neondatabase/serverless`. Schema is created/applied from
+  `workers/db/migrations/*.sql` (additive; run manually against the live
+  database). Autogenerate is not used.
+- Route modules use `createSql(env)` for raw parameterized SQL. All writes go
+  through `src/lib/crud.ts` helpers where possible.
+- `.env`/secrets must never be committed or logged. `DATABASE_URL` and
+  `JWT_SECRET` live only as worker secrets and in `.dev.vars` (dev).
 
-## Upstream synchronization policy
+## Admin seeding (fresh deployment)
 
-Upstream changes may be reviewed and selectively incorporated, but they are NOT automatically authoritative.
+1. Create the user in Firebase (REST `accounts:signUp` or the console).
+2. Sign in via the app (or REST `accounts:signInWithPassword`) to get an ID
+   token, then `POST /api/v1/auth/firebase` for a backend JWT.
+3. `POST /api/v1/platform/administrators` with `{ email, role: "super_admin" }`
+   and that JWT. `GET /api/v1/platform/session` then reports
+   `is_super_admin: true`.
 
-When asked to sync upstream:
+## Adding a route module
 
-1. Inspect the upstream commit/branch first.
-2. Compare it against this repository.
-3. Identify conflicts with the independent infrastructure.
-4. Preserve the independent Neon/Vercel/Cloudflare/R2 architecture.
-5. Never copy upstream secrets or environment values.
-6. Never point this repository back to Langattr production infrastructure.
-7. Test before merging changes into `main`.
-
-## Deployment rule
-
-`main` in **`oliver4441/Phikila-School-Management-System`** is the production source for this independent deployment.
-
-Pull requests and feature branches are for development and review.
-
-Do not assume a deployment belonging to `langattr-cloud` is this project's deployment.
+Create `workers/src/routes/<name>.ts` (Hono router), mount it in
+`workers/src/index.ts`, and follow the prefix rule above. No Alembic; add any
+new tables/columns as a new `workers/db/migrations/NNN_*.sql` file.

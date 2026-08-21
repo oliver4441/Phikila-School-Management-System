@@ -1,72 +1,376 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { LogoMark } from '../components/Logo'
+import {
+  CalendarIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  DashboardIcon,
+  GridIcon,
+  LayersIcon,
+  LockIcon,
+  SchoolIcon,
+  SparkIcon,
+  UserIcon,
+} from '../components/icons'
 import { Link } from '../lib/router'
-import './PhikilaLanding.css'
+import { api } from '../lib/api'
 
-const CAPABILITIES = [
-  { eyebrow: '01', title: 'Student operations', text: 'Manage admissions, profiles, enrollment, guardians, academic history and student records from one source of truth.', items: ['Student records', 'Enrollment & transfers', 'Guardian profiles'] },
-  { eyebrow: '02', title: 'Academic management', text: 'Bring classes, subjects, examinations, results and academic years into a connected workflow for administrators and teachers.', items: ['Classes & subjects', 'Examinations & results', 'Academic years'] },
-  { eyebrow: '03', title: 'Attendance & engagement', text: 'Track attendance consistently and surface the information teams need to act before small issues become larger ones.', items: ['Daily attendance', 'Class visibility', 'Engagement insights'] },
-  { eyebrow: '04', title: 'Finance & fees', text: 'Create a clearer operational view of school finances, fee records and outstanding balances.', items: ['Fee management', 'Payment tracking', 'Financial visibility'] },
-  { eyebrow: '05', title: 'Intelligent scheduling', text: 'Model teachers, subjects, rooms, periods and constraints, then generate and analyse timetables from a single workspace.', items: ['Requirements & constraints', 'Timetable generation', 'Scheduling analytics'] },
-  { eyebrow: '06', title: 'AI-assisted workflows', text: 'Use AI where it improves decisions and reduces repetitive work, with provider controls and school context kept inside the platform.', items: ['School copilot', 'OCR workflows', 'AI provider controls'] },
+type Feature = {
+  icon: ReactNode
+  eyebrow: string
+  title: string
+  description: string
+}
+
+const FEATURES: Feature[] = [
+  {
+    icon: <CalendarIcon />,
+    eyebrow: 'Scheduling',
+    title: 'Build timetables with confidence',
+    description: 'Bring periods, rooms, teachers, and constraints together before publishing a schedule.',
+  },
+  {
+    icon: <UserIcon />,
+    eyebrow: 'People',
+    title: 'Keep every learner record organised',
+    description: 'Manage student enrolment, class assignments, and staff information from one reliable workspace.',
+  },
+  {
+    icon: <LayersIcon />,
+    eyebrow: 'Academics',
+    title: 'Structure the academic year clearly',
+    description: 'Set up years, terms, levels, streams, subjects, and teaching requirements without scattered files.',
+  },
+  {
+    icon: <CheckIcon />,
+    eyebrow: 'Daily operations',
+    title: 'Make attendance easier to act on',
+    description: 'Capture class attendance consistently and give school teams a clearer view of daily participation.',
+  },
+  {
+    icon: <GridIcon />,
+    eyebrow: 'Performance',
+    title: 'Turn results into useful insight',
+    description: 'Record examinations, review performance, and prepare reports that support better decisions.',
+  },
+  {
+    icon: <SparkIcon />,
+    eyebrow: 'Productivity',
+    title: 'Move repetitive work forward faster',
+    description: 'Use document scanning, scheduling assistance, and connected workflows to reduce administrative effort.',
+  },
 ]
 
-const ROLES = [
-  ['School administrators', 'Operate the institution with a unified view of people, academics, attendance, finance and reporting.'],
-  ['Teachers', 'Manage classes, attendance, academic work and schedules without jumping between disconnected systems.'],
-  ['Parents & students', 'Give families and learners a clearer path to the information they actually need.'],
+const OPERATIONS = [
+  { label: 'School setup', icon: <SchoolIcon /> },
+  { label: 'Academic structure', icon: <LayersIcon /> },
+  { label: 'Timetables', icon: <CalendarIcon /> },
+  { label: 'Students & staff', icon: <UserIcon /> },
+  { label: 'Attendance', icon: <CheckIcon /> },
+  { label: 'Reports & insight', icon: <GridIcon /> },
 ]
 
 export function LandingPage() {
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [activeCapability, setActiveCapability] = useState(4)
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking')
 
   useEffect(() => {
-    document.title = 'Phikila · School operations, connected'
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileOpen(false) }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.title = 'Phikila — School operations, in one place'
+    api.health()
+      .then(() => setApiStatus('online'))
+      .catch(() => setApiStatus('offline'))
   }, [])
 
-  const capability = CAPABILITIES[activeCapability]
-
   return (
-    <div className="phikila-landing">
-      <header className="site-header"><div className="container header-inner">
-        <a className="brand" href="#top" aria-label="Phikila home"><span className="brand-mark">P</span><span>Phikila</span></a>
-        <button className="mobile-menu" onClick={() => setMobileOpen((value) => !value)} aria-label="Toggle navigation" aria-expanded={mobileOpen}>{mobileOpen ? '×' : '☰'}</button>
-        <nav className={mobileOpen ? 'main-nav open' : 'main-nav'} aria-label="Primary navigation"><a href="#platform" onClick={() => setMobileOpen(false)}>Platform</a><a href="#capabilities" onClick={() => setMobileOpen(false)}>Capabilities</a><a href="#roles" onClick={() => setMobileOpen(false)}>For schools</a><a href="#pricing" onClick={() => setMobileOpen(false)}>Pricing</a></nav>
-        <div className="header-actions"><Link to="/login" className="text-link">Sign in</Link><Link to="/start" className="button button-dark">Start free trial</Link></div>
-      </div></header>
+    <div className="landing">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
 
-      <main id="top">
-        <section className="hero"><div className="hero-grid container"><div className="hero-copy">
-          <div className="eyebrow"><span className="status-dot" /> One month free for new schools</div>
-          <h1>Run your school with <span>one connected system.</span></h1>
-          <p>Phikila brings students, academics, attendance, finance, scheduling and intelligent workflows into a single operational platform.</p>
-          <div className="hero-actions"><Link to="/start" className="button button-primary">Start your 30-day trial <span>→</span></Link><a href="#platform" className="button button-secondary">Explore the platform</a></div>
-          <div className="trust-line"><span>No payment in demo</span><i /><span>Role-based access</span><i /><span>Built to scale</span></div>
+      <header className="landing__hero">
+        <nav className="landing__nav" aria-label="Main navigation">
+          <a className="landing__brand" href="#top" aria-label="Phikila home">
+            <LogoMark size={38} tone="dark" />
+            <span className="landing__brand-copy">
+              <span className="landing__brand-name">PHIKILA</span>
+              <span className="landing__brand-tagline">School Management System</span>
+            </span>
+          </a>
+
+          <div className="landing__nav-links">
+            <a href="#platform">Platform</a>
+            <a href="#capabilities">Capabilities</a>
+            <a href="#workflow">How it works</a>
+          </div>
+
+          <div className="landing__nav-actions">
+            <Link className="landing__sign-in" to="/login">Sign in</Link>
+            <Link className="landing__nav-cta" to="/signup">
+              Get started <ChevronRightIcon width={16} height={16} />
+            </Link>
+          </div>
+        </nav>
+
+        <main id="main-content">
+          <div className="landing__hero-grid" id="top">
+            <div className="landing__hero-copy">
+              <div className="landing__announcement">
+                <span className="landing__announcement-dot" />
+                One connected school operating system
+              </div>
+              <h1 className="landing__title">
+                School operations,<br />
+                <span>finally in sync.</span>
+              </h1>
+              <p className="landing__subtitle">
+                Bring records, academics, scheduling, attendance, finance, and reporting into one clear system—so your team can spend less time chasing information and more time moving the school forward.
+              </p>
+              <div className="landing__cta">
+                <Link className="landing__button landing__button--primary" to="/signup">
+                  Create your workspace <ChevronRightIcon width={18} height={18} />
+                </Link>
+                <a className="landing__button landing__button--secondary" href="#platform">
+                  Explore the platform
+                </a>
+              </div>
+              <div className="landing__hero-points" aria-label="Platform highlights">
+                <span><CheckIcon width={15} height={15} /> Guided setup</span>
+                <span><CheckIcon width={15} height={15} /> Role-aware access</span>
+                <span><CheckIcon width={15} height={15} /> One source of truth</span>
+              </div>
+            </div>
+
+            <div className="landing__product-stage" aria-label="Illustrative preview of the Phikila dashboard">
+              <div className="landing__stage-glow" />
+              <div className="product-preview">
+                <div className="product-preview__topbar">
+                  <div className="product-preview__mini-brand">
+                    <LogoMark size={22} tone="light" />
+                    <span>Phikila</span>
+                  </div>
+                  <div className="product-preview__top-actions">
+                    <span className="product-preview__search">Search</span>
+                    <span className="product-preview__avatar">AM</span>
+                  </div>
+                </div>
+                <div className="product-preview__body">
+                  <aside className="product-preview__sidebar" aria-hidden="true">
+                    <span className="product-preview__nav-item product-preview__nav-item--active"><DashboardIcon /> Overview</span>
+                    <span className="product-preview__nav-item"><CalendarIcon /> Timetable</span>
+                    <span className="product-preview__nav-item"><UserIcon /> Students</span>
+                    <span className="product-preview__nav-item"><CheckIcon /> Attendance</span>
+                    <span className="product-preview__nav-item"><GridIcon /> Reports</span>
+                  </aside>
+                  <div className="product-preview__workspace">
+                    <div className="product-preview__heading">
+                      <div>
+                        <span className="product-preview__kicker">Monday overview</span>
+                        <strong>Good morning, Admin</strong>
+                      </div>
+                      <span className="product-preview__term">Term 2 · Week 6</span>
+                    </div>
+                    <div className="product-preview__metrics">
+                      <div className="preview-metric">
+                        <span>Students</span><strong>1,248</strong><small>Active enrolment</small>
+                      </div>
+                      <div className="preview-metric">
+                        <span>Attendance</span><strong>94.8%</strong><small className="preview-metric__positive">↑ 1.6% this week</small>
+                      </div>
+                      <div className="preview-metric">
+                        <span>Staff</span><strong>86</strong><small>4 departments</small>
+                      </div>
+                    </div>
+                    <div className="product-preview__panels">
+                      <div className="preview-panel preview-panel--schedule">
+                        <div className="preview-panel__header"><strong>Today&apos;s schedule</strong><span>View all</span></div>
+                        <div className="preview-lesson"><time>08:00</time><i className="preview-lesson__line preview-lesson__line--green" /><div><strong>Mathematics</strong><span>Grade 9 · Room 12</span></div></div>
+                        <div className="preview-lesson"><time>09:20</time><i className="preview-lesson__line preview-lesson__line--gold" /><div><strong>English Language</strong><span>Grade 8 · Room 04</span></div></div>
+                        <div className="preview-lesson"><time>11:00</time><i className="preview-lesson__line preview-lesson__line--blue" /><div><strong>Integrated Science</strong><span>Grade 10 · Lab 02</span></div></div>
+                      </div>
+                      <div className="preview-panel preview-panel--attendance">
+                        <div className="preview-panel__header"><strong>Attendance</strong><span>Today</span></div>
+                        <div className="preview-ring"><span><strong>94.8%</strong><small>Present</small></span></div>
+                        <div className="preview-bars" aria-hidden="true">
+                          <i style={{ height: '48%' }} /><i style={{ height: '64%' }} /><i style={{ height: '57%' }} /><i style={{ height: '78%' }} /><i style={{ height: '88%' }} /><i style={{ height: '73%' }} /><i style={{ height: '94%' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="landing__floating-card landing__floating-card--top">
+                <span className="landing__floating-icon"><CheckIcon width={16} height={16} /></span>
+                <span><strong>Schedule ready</strong><small>No conflicts detected</small></span>
+              </div>
+              <div className="landing__floating-card landing__floating-card--bottom">
+                <span className="landing__floating-icon landing__floating-icon--gold"><SparkIcon width={16} height={16} /></span>
+                <span><strong>Daily overview</strong><small>Everything in one view</small></span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </header>
+
+      <section className="landing__continuity" aria-label="Connected school operations">
+        <p>One source of truth across your school</p>
+        <div className="landing__continuity-items">
+          {OPERATIONS.map((item) => (
+            <span key={item.label}>{item.icon}{item.label}</span>
+          ))}
         </div>
-        <div className="hero-product" aria-label="Phikila product preview"><div className="window-bar"><span /><span /><span /><b>Phikila / Overview</b></div><div className="product-layout"><aside><strong>Phikila</strong><small>School workspace</small><em>Overview</em><em>Students</em><em>Academics</em><em>Attendance</em><em>Finance</em><em className="active">Scheduling</em><em>Analytics</em></aside><div className="product-main"><div className="product-top"><div><small>School operations</small><h3>Good morning, administrator</h3></div><span className="user-chip">A</span></div><div className="metric-grid"><div><small>Students</small><strong>2,481</strong><span>↑ 8.4%</span></div><div><small>Attendance</small><strong>96.4%</strong><span>↑ 2.1%</span></div><div><small>Open fees</small><strong>184</strong><span>records</span></div></div><div className="schedule-card"><div className="card-head"><div><small>Timetable</small><strong>Today's schedule</strong></div><span>View all →</span></div>{['08:00  Mathematics · Grade 8A','10:00  Science · Grade 9B','12:00  English · Grade 7C','14:00  Mathematics · Grade 10A'].map((item) => <div className="schedule-row" key={item}><span>{item.slice(0, 5)}</span><b>{item.slice(6)}</b><i>Confirmed</i></div>)}</div></div></div><div className="product-badge badge-one">Demo school data</div><div className="product-badge badge-two">Secure access</div></div></div></section>
+      </section>
 
-        <section className="proof-strip"><div className="container proof-inner"><span>One platform for the school lifecycle</span><strong>Students</strong><strong>Academics</strong><strong>Attendance</strong><strong>Finance</strong><strong>Scheduling</strong><strong>Analytics</strong></div></section>
+      <section className="landing__platform" id="platform">
+        <div className="landing__section-heading">
+          <p className="landing__eyebrow">Built for operational clarity</p>
+          <h2>Run the whole school without losing the details.</h2>
+          <p>Phikila gives every workflow a proper home, while keeping the information your team depends on connected and easy to understand.</p>
+        </div>
 
-        <section className="section platform" id="platform"><div className="container"><div className="section-intro"><div><span className="kicker">THE PHIKILA PLATFORM</span><h2>Everything operational.<br /><span>Connected by design.</span></h2></div><p>Replace fragmented workflows with a shared operating layer for administrators, teachers, students and families.</p></div><div className="capability-explorer" id="capabilities"><div className="capability-list">{CAPABILITIES.map((item, index) => <button className={index === activeCapability ? 'capability active' : 'capability'} key={item.title} onClick={() => setActiveCapability(index)}><span>{item.eyebrow}</span><strong>{item.title}</strong><i>→</i></button>)}</div><div className="capability-detail"><span className="detail-number">{capability.eyebrow}</span><h3>{capability.title}</h3><p>{capability.text}</p><ul>{capability.items.map((item) => <li key={item}><span>✓</span>{item}</li>)}</ul><div className="detail-visual"><div className="mini-header"><span>Phikila workspace</span><span>Demo</span></div><div className="mini-chart"><div style={{ height: '42%' }} /><div style={{ height: '68%' }} /><div style={{ height: '54%' }} /><div style={{ height: '82%' }} /><div style={{ height: '72%' }} /><div style={{ height: '92%' }} /></div><div className="mini-footer"><span>Operational visibility</span><b>Updated now</b></div></div></div></div></div></section>
+        <div className="landing__bento">
+          <article className="landing__bento-card landing__bento-card--wide landing__bento-card--dark">
+            <div className="landing__bento-copy">
+              <span className="landing__bento-icon"><CalendarIcon /></span>
+              <p className="landing__bento-label">Smarter scheduling</p>
+              <h3>Build a timetable around real school constraints.</h3>
+              <p>Coordinate teaching requirements, rooms, periods, and availability in one structured workflow.</p>
+            </div>
+            <div className="mini-timetable" aria-hidden="true">
+              <div className="mini-timetable__days"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span></div>
+              <div className="mini-timetable__grid">
+                <span className="mini-slot mini-slot--emerald">Math <small>08:00</small></span>
+                <span className="mini-slot mini-slot--blue">English <small>08:00</small></span>
+                <span />
+                <span className="mini-slot mini-slot--gold">Science <small>09:20</small></span>
+                <span />
+                <span className="mini-slot mini-slot--gold">Science <small>09:20</small></span>
+                <span className="mini-slot mini-slot--emerald">Math <small>10:40</small></span>
+                <span />
+              </div>
+            </div>
+          </article>
 
-        <section className="section scheduling-section"><div className="container scheduling-grid"><div><span className="kicker">A DIFFERENTIATOR</span><h2>Timetabling without the spreadsheet <span>guesswork.</span></h2><p>Phikila models the constraints behind a real school timetable — teachers, subjects, rooms, periods and requirements — so teams can generate, review and improve schedules from one system.</p><Link to="/start" className="inline-link">Explore scheduling <span>→</span></Link></div><div className="constraint-board"><div className="constraint-head"><span>Scheduling workspace</span><b>Demo</b></div><div className="constraint-row"><span>Teacher availability</span><strong>98%</strong></div><div className="constraint-row"><span>Room conflicts</span><strong>0</strong></div><div className="constraint-row"><span>Required periods</span><strong>124 / 124</strong></div><div className="constraint-row"><span>Classes placed</span><strong>42 / 42</strong></div><div className="optimization"><span>Schedule quality</span><b>94%</b><div><i /></div></div></div></div></section>
+          <article className="landing__bento-card landing__bento-card--records">
+            <span className="landing__bento-icon landing__bento-icon--light"><UserIcon /></span>
+            <p className="landing__bento-label">Connected records</p>
+            <h3>A complete view of your school community.</h3>
+            <p>Keep student and staff information structured, current, and ready for the next task.</p>
+            <div className="record-stack" aria-hidden="true">
+              <div><span className="record-stack__avatar">AN</span><p><strong>Amara N.</strong><small>Grade 9 · East</small></p><em>Active</em></div>
+              <div><span className="record-stack__avatar record-stack__avatar--gold">KM</span><p><strong>Kelvin M.</strong><small>Grade 10 · North</small></p><em>Active</em></div>
+              <div><span className="record-stack__avatar record-stack__avatar--blue">LW</span><p><strong>Linet W.</strong><small>Grade 8 · West</small></p><em>Active</em></div>
+            </div>
+          </article>
 
-        <section className="section roles" id="roles"><div className="container"><div className="center-intro"><span className="kicker">ONE PLATFORM, DIFFERENT EXPERIENCES</span><h2>Designed around the people who <span>run and use schools.</span></h2></div><div className="role-grid">{ROLES.map(([title, text], index) => <article key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{text}</p><a href="#platform">Explore experience →</a></article>)}</div></div></section>
+          <article className="landing__bento-card landing__bento-card--insight">
+            <span className="landing__bento-icon landing__bento-icon--light"><GridIcon /></span>
+            <p className="landing__bento-label">Decision-ready insight</p>
+            <h3>See what needs attention sooner.</h3>
+            <p>Bring attendance, academic performance, and school operations into a clearer daily picture.</p>
+            <div className="insight-chart" aria-hidden="true">
+              <div className="insight-chart__legend"><span>Term progress</span><strong>On track</strong></div>
+              <div className="insight-chart__bars"><i /><i /><i /><i /><i /><i /><i /></div>
+            </div>
+          </article>
+        </div>
+      </section>
 
-        <section className="section workflow"><div className="container"><div className="center-intro"><span className="kicker">GO LIVE WITHOUT THE CHAOS</span><h2>From sign-up to <span>school workspace.</span></h2><p>Start with a one-month trial. The demo flow is ready for real payment and tenant provisioning integrations later.</p></div><div className="workflow-line">{['Create account', 'Set up school', 'Choose plan', '30-day free trial', 'Workspace goes live'].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong>{index < 4 && <i>→</i>}</div>)}</div></div></section>
+      <section className="landing__capabilities" id="capabilities">
+        <div className="landing__section-heading landing__section-heading--left">
+          <p className="landing__eyebrow">A platform that grows with the work</p>
+          <h2>Every essential workflow. One consistent experience.</h2>
+        </div>
+        <div className="landing__feature-grid">
+          {FEATURES.map((feature) => (
+            <article className="landing__feature-card" key={feature.title}>
+              <span className="landing__feature-icon">{feature.icon}</span>
+              <div>
+                <p className="landing__feature-eyebrow">{feature.eyebrow}</p>
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
-        <section className="section security"><div className="container security-grid"><div><span className="kicker">ENTERPRISE FOUNDATION</span><h2>Control, visibility and <span>accountability.</span></h2><p>As Phikila grows across schools, the platform should make permissions, school boundaries and operational activity visible by default.</p></div><div className="security-list"><div><strong>Role-based access</strong><span>Users see what their role permits.</span></div><div><strong>School-level isolation</strong><span>Each institution operates in its own workspace.</span></div><div><strong>Audit-ready activity</strong><span>Platform operations can be reviewed and traced.</span></div><div><strong>Platform administration</strong><span>Superadmin tooling sits above individual schools.</span></div></div></div></section>
+      <section className="landing__workflow" id="workflow">
+        <div className="landing__workflow-inner">
+          <div className="landing__section-heading">
+            <p className="landing__eyebrow landing__eyebrow--light">A clearer path from day one</p>
+            <h2>Set up carefully. Operate confidently.</h2>
+            <p>Phikila turns a complex school setup into a straightforward sequence your team can follow.</p>
+          </div>
+          <ol className="landing__steps">
+            <li>
+              <span className="landing__step-number">01</span>
+              <div><h3>Build your foundation</h3><p>Add the school profile, academic calendar, levels, streams, staff, and subjects.</p></div>
+            </li>
+            <li>
+              <span className="landing__step-number">02</span>
+              <div><h3>Connect your workflows</h3><p>Bring students, teaching requirements, timetables, attendance, and assessments together.</p></div>
+            </li>
+            <li>
+              <span className="landing__step-number">03</span>
+              <div><h3>Run with a shared view</h3><p>Give the right people the context they need to keep daily operations moving.</p></div>
+            </li>
+          </ol>
+        </div>
+      </section>
 
-        <section className="section pricing" id="pricing"><div className="container"><div className="section-intro"><div><span className="kicker">PRICING</span><h2>Start with <span>one month free.</span></h2></div><p>Use the demo onboarding flow now. The same structure can later connect to live plans, M-Pesa or another payment provider, subscription webhooks and automated tenant provisioning.</p></div><div className="pricing-card"><div><span>NEW SCHOOL TRIAL</span><h3>30 days free</h3><p>No payment is collected in demo mode. After the trial, the selected commercial plan will determine billing once the payment layer is connected.</p></div><Link to="/start" className="button button-dark">Start free trial <span>→</span></Link></div></div></section>
+      <section className="landing__trust">
+        <div className="landing__trust-inner">
+          <div className="landing__trust-mark"><LockIcon width={28} height={28} /></div>
+          <div className="landing__trust-copy">
+            <p className="landing__eyebrow">Designed for responsible access</p>
+            <h2>Your school&apos;s information deserves a system built with care.</h2>
+            <p>Secure authentication, role-aware access, and centralised administration help your team work from a more controlled and dependable foundation.</p>
+          </div>
+          <div className="landing__trust-points">
+            <span><CheckIcon /> Controlled access requests</span>
+            <span><CheckIcon /> Role-aware workspaces</span>
+            <span><CheckIcon /> Centralised school records</span>
+          </div>
+        </div>
+      </section>
 
-        <section className="final-cta"><div className="container"><span className="kicker">TRY THE COMMERCIAL FLOW</span><h2>Give your school a <span>head start.</span></h2><p>Experience the school setup and one-month trial flow with demo data before connecting production services.</p><Link to="/start" className="button button-light">Start 30-day trial <span>→</span></Link></div></section>
-      </main>
+      <section className="landing__final-cta">
+        <div className="landing__final-cta-glow" />
+        <div className="landing__final-cta-inner">
+          <p className="landing__eyebrow landing__eyebrow--light">A better operating rhythm starts here</p>
+          <h2>Give your school one clear place to move forward.</h2>
+          <p>Set up your workspace and bring the people, plans, and information behind every school day together.</p>
+          <div className="landing__cta landing__cta--centered">
+            <Link className="landing__button landing__button--primary" to="/signup">
+              Get started with Phikila <ChevronRightIcon width={18} height={18} />
+            </Link>
+            <Link className="landing__button landing__button--dark-outline" to="/login">Sign in</Link>
+          </div>
+        </div>
+      </section>
 
-      <footer className="site-footer"><div className="container footer-grid"><div><a className="brand" href="#top"><span className="brand-mark">P</span><span>Phikila</span></a><p>School operations, connected.</p></div><div><small>Platform</small><a href="#platform">Capabilities</a><a href="#roles">For schools</a><a href="#pricing">Pricing</a></div><div><small>Account</small><Link to="/login">Sign in</Link><Link to="/start">Start trial</Link></div></div><div className="container footer-bottom"><span>© 2026 Phikila</span><span>Demo commercial flow · No real payment</span></div></footer>
+      <footer className="landing__footer">
+        <div className="landing__footer-main">
+          <div className="landing__footer-brand">
+            <span className="landing__brand">
+              <LogoMark size={34} tone="dark" />
+              <span className="landing__brand-copy">
+                <span className="landing__brand-name">PHIKILA</span>
+                <span className="landing__brand-tagline">School Management System</span>
+              </span>
+            </span>
+            <p>A clearer operating system for modern school teams.</p>
+          </div>
+          <div className="landing__footer-links">
+            <div><strong>Platform</strong><a href="#platform">Overview</a><a href="#capabilities">Capabilities</a><a href="#workflow">How it works</a></div>
+            <div><strong>Access</strong><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div>
+          </div>
+        </div>
+        <div className="landing__footer-bottom">
+          <p>© {new Date().getFullYear()} Phikila School Management System. All rights reserved.</p>
+          <span className="landing__status" aria-live="polite">
+            <i className={`status-dot status-dot--${apiStatus}`} />
+            {apiStatus === 'checking' ? 'Checking system status' : apiStatus === 'online' ? 'All systems operational' : 'Status unavailable'}
+          </span>
+        </div>
+      </footer>
     </div>
   )
 }

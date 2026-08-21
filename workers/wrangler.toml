@@ -1,0 +1,18 @@
+name = "phikila-backend"
+main = "src/index.ts"
+account_id = "549a05783941248fb5a7f53ede7c54fa"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+ENVIRONMENT = "production"
+FIREBASE_PROJECT_ID = "omix-systems-cd1af"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "phikila-storage"
+
+# Injected via `wrangler secret put` in production:
+#   DATABASE_URL
+#   JWT_SECRET

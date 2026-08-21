@@ -4,7 +4,7 @@ Creates the tt_* tables only. No existing table is altered or dropped, so this
 migration is additive and safe to run against the live database.
 
 Revision ID: a1c4f7b20d31
-Revises: 43fea8e527aa
+Revises: 3c1551cada12
 Create Date: 2026-08-14
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "a1c4f7b20d31"
-down_revision = "43fea8e527aa"
+down_revision = "3c1551cada12"
 branch_labels = None
 depends_on = None
 

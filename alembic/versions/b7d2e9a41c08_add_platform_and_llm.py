@@ -17,14 +17,33 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    # --- schools gain an activate/deactivate lifecycle -------------------
-    op.add_column(
-        "tt_schools",
-        sa.Column("status", sa.String(20), nullable=False, server_default="active"),
-    )
+def _migrate_bootstrap_platform_admins() -> None:
+    """Replace the temporary UUID-based bootstrap table with the model schema."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "tt_platform_admins" not in inspector.get_table_names():
+        return
 
-    # --- platform authority ---------------------------------------------
+    rows = bind.execute(
+        sa.text(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'tt_platform_admins'
+            """
+        )
+    ).all()
+    types = {row[0]: row[1] for row in rows}
+    if types.get("id") == "integer" and types.get("user_id") in {"character varying", "text"}:
+        return
+
+    op.execute("DROP INDEX IF EXISTS ix_tt_platform_admins_user_id")
+    op.execute("DROP INDEX IF EXISTS ix_tt_platform_admins_email")
+    op.execute("ALTER TABLE tt_platform_admins DROP CONSTRAINT IF EXISTS tt_platform_admins_pkey")
+    op.execute("ALTER TABLE tt_platform_admins DROP CONSTRAINT IF EXISTS tt_platform_admins_user_id_key")
+    op.execute("ALTER TABLE tt_platform_admins RENAME TO tt_platform_admins_bootstrap")
+
     op.create_table(
         "tt_platform_admins",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -34,6 +53,35 @@ def upgrade() -> None:
         sa.Column("granted_by", sa.String(64)),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
+
+    op.execute(
+        """
+        INSERT INTO tt_platform_admins (user_id, email, is_active, granted_by, created_at)
+        SELECT user_id::text, email::text, is_active, granted_by::text, created_at
+        FROM tt_platform_admins_bootstrap
+        """
+    )
+    op.drop_table("tt_platform_admins_bootstrap")
+
+
+def upgrade() -> None:
+    op.add_column(
+        "tt_schools",
+        sa.Column("status", sa.String(20), nullable=False, server_default="active"),
+    )
+
+    _migrate_bootstrap_platform_admins()
+    bind = op.get_bind()
+    if "tt_platform_admins" not in sa.inspect(bind).get_table_names():
+        op.create_table(
+            "tt_platform_admins",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("user_id", sa.String(64), nullable=False, unique=True, index=True),
+            sa.Column("email", sa.String(160)),
+            sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("granted_by", sa.String(64)),
+            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        )
 
     op.create_table(
         "tt_access_requests",
@@ -54,9 +102,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("user_id", name="uq_tt_access_request_user"),
     )
-    op.create_index(
-        "ix_tt_access_request_status", "tt_access_requests", ["status", "created_at"]
-    )
+    op.create_index("ix_tt_access_request_status", "tt_access_requests", ["status", "created_at"])
 
     op.create_table(
         "tt_platform_audit",
@@ -71,12 +117,10 @@ def upgrade() -> None:
         sa.Column("at", sa.DateTime(), nullable=False, server_default=sa.func.now(), index=True),
     )
 
-    # --- LLM providers ---------------------------------------------------
     op.create_table(
         "tt_llm_credentials",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("provider", sa.String(40), nullable=False, index=True),
-        # Ciphertext only. Plaintext keys are never written to this table.
         sa.Column("encrypted_api_key", sa.Text(), nullable=False),
         sa.Column("last4", sa.String(8)),
         sa.Column("status", sa.String(30), nullable=False, server_default="not_configured"),

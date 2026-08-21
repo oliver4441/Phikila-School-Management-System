@@ -7,10 +7,21 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { supabase } from './supabase'
+import {
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  confirmPasswordReset,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+} from 'firebase/auth'
+import { firebaseAuth, getFirebaseIdToken } from './firebase'
 import { friendlyAuthError } from './authErrors'
-import { apiFetch } from './api'
-import { clearLocalSession, getLocalSession, localSignIn } from './localAuth'
+import { apiFetch, exchangeFirebaseIdToken, type ApiSession } from './api'
+import { getStoredSession, setStoredSession } from './authSession'
 
 export type AuthResult = { ok: true; message?: string } | { ok: false; message: string }
 
@@ -44,6 +55,7 @@ type AuthContextValue = {
   /** True while the user is inside a password-recovery link flow. */
   recoveryMode: boolean
   signIn: (email: string, password: string) => Promise<AuthResult>
+  signInWithGoogle: () => Promise<AuthResult>
   signUp: (
     fullName: string,
     email: string,
@@ -65,215 +77,206 @@ export function displayName(user: AuthUser | null): string {
 }
 
 /**
- * Local (self-hosted) sign-in against the backend's own token endpoint.
- * Used only when no Supabase project is configured.
+ * Firebase Auth provider. Signs the browser in with Firebase (email/password or
+ * Google), exchanges the ID token for the backend's own session token via
+ * `/api/v1/auth/firebase`, and stores that session for the API layer.
  */
-function LocalAuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(() => getLocalSession())
-
-  const signIn = useCallback<AuthContextValue['signIn']>(async (email, password) => {
-    try {
-      const local = await localSignIn(email.trim(), password)
-      setSession(local)
-      return { ok: true, message: 'Signed in.' }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'We could not sign you in.'
-      return { ok: false, message }
-    }
-  }, [])
-
-  const signUp = useCallback<AuthContextValue['signUp']>(async () => {
-    return {
-      ok: false,
-      message:
-        'Account creation is disabled in this local preview. Use one of the demo accounts shown on the sign-in screen.',
-    }
-  }, [])
-
-  const signOut = useCallback<AuthContextValue['signOut']>(async () => {
-    clearLocalSession()
-    setSession(null)
-    return { ok: true, message: 'You have been signed out.' }
-  }, [])
-
-  const requestPasswordReset = useCallback<AuthContextValue['requestPasswordReset']>(async () => {
-    return {
-      ok: false,
-      message: 'Password reset is not available in this local preview.',
-    }
-  }, [])
-
-  const updatePassword = useCallback<AuthContextValue['updatePassword']>(async () => {
-    return {
-      ok: false,
-      message: 'Password changes are not available in this local preview.',
-    }
-  }, [])
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      session,
-      user: session?.user ?? null,
-      initialising: false,
-      recoveryMode: false,
-      signIn,
-      signUp,
-      signOut,
-      requestPasswordReset,
-      updatePassword,
-    }),
-    [session, signIn, signUp, signOut, requestPasswordReset, updatePassword],
-  )
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-/**
- * Supabase Auth provider — the production path. Signs the browser in
- * directly with the public anon key and sends the access token to the API.
- */
-function SupabaseAuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(null)
+function FirebaseAuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<AuthSession | null>(() => getStoredSession())
   const [initialising, setInitialising] = useState(true)
-  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('mode') === 'resetPassword' && Boolean(params.get('oobCode'))
+  })
 
+  // Keep the stored session in sync with state so the API layer always sees it.
+  useEffect(() => {
+    setStoredSession(session as ApiSession | null)
+  }, [session])
+
+  // Restore a valid backend session when a stored one exists and the browser
+  // is signed in with Firebase.
   useEffect(() => {
     let active = true
-    if (!supabase) return
-
-    const toAuthSession = (s: { access_token: string; user: AuthUser } | null): AuthSession | null =>
-      s ? { access_token: s.access_token, user: s.user } : null
-
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (!active) return
-        setSession(toAuthSession(data.session as { access_token: string; user: AuthUser } | null))
-      })
-      .finally(() => {
-        if (active) setInitialising(false)
-      })
-
-    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (!active) return
-      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true)
-      if (event === 'SIGNED_OUT') setRecoveryMode(false)
-      setSession(toAuthSession(nextSession as { access_token: string; user: AuthUser } | null))
+    const stored = getStoredSession()
+    if (!stored) {
       setInitialising(false)
-    })
-
+      return
+    }
+    const restore = async () => {
+      const idToken = await getFirebaseIdToken()
+      if (!active) return
+      if (!idToken) {
+        setStoredSession(null)
+        setSession(null)
+        setInitialising(false)
+        return
+      }
+      try {
+        const fresh = await exchangeFirebaseIdToken(idToken)
+        if (!active) return
+        setSession(fresh)
+      } catch {
+        if (active) setSession(stored)
+      } finally {
+        if (active) setInitialising(false)
+      }
+    }
+    void restore()
     return () => {
       active = false
-      data.subscription.unsubscribe()
     }
   }, [])
 
-  const signIn = useCallback<AuthContextValue['signIn']>(async (email, password) => {
-    const { error } = await supabase!.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
-    if (error) {
-      return { ok: false, message: friendlyAuthError(error, 'We could not sign you in. Please try again.') }
+  // Follow Firebase sign-in state: on change, exchange the ID token for a
+  // backend session.
+  useEffect(() => {
+    if (!firebaseAuth) {
+      setInitialising(false)
+      return
     }
-    return { ok: true }
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setStoredSession(null)
+        setSession(null)
+        setInitialising(false)
+        return
+      }
+      try {
+        const idToken = await firebaseUser.getIdToken()
+        const fresh = await exchangeFirebaseIdToken(idToken)
+        setSession(fresh)
+      } catch {
+        setStoredSession(null)
+        setSession(null)
+      } finally {
+        setInitialising(false)
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const signIn = useCallback<AuthContextValue['signIn']>(async (email, password) => {
+    if (!firebaseAuth) return { ok: false, message: 'Sign-in is not configured on this deployment.' }
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email.trim(), password)
+      return { ok: true, message: 'Signed in.' }
+    } catch (error) {
+      return { ok: false, message: friendlyAuthError(error, 'We could not sign you in.') }
+    }
+  }, [])
+
+  const signInWithGoogle = useCallback<AuthContextValue['signInWithGoogle']>(async () => {
+    if (!firebaseAuth) return { ok: false, message: 'Sign-in is not configured on this deployment.' }
+    try {
+      await signInWithPopup(firebaseAuth, new GoogleAuthProvider())
+      return { ok: true, message: 'Signed in.' }
+    } catch (error) {
+      return { ok: false, message: friendlyAuthError(error, 'We could not sign you in.') }
+    }
   }, [])
 
   const signUp = useCallback<AuthContextValue['signUp']>(
     async (fullName, email, password, request) => {
-      // The requested role and school are stored as user metadata purely so the
-      // request survives email confirmation. They confer nothing: the server
-      // records them as a pending request that a super admin must approve, and
-      // it re-derives every permission from its own tables.
-      const { data, error } = await supabase!.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-            requested_role: request?.requested_role ?? null,
-            requested_school_id: request?.school_id ?? null,
-            requested_school_name: request?.school_name ?? null,
-          },
-          emailRedirectTo: `${window.location.origin}/login`,
-        },
-      })
-
-      if (error) {
+      if (!firebaseAuth) return { ok: false, message: 'Account creation is not available on this deployment.' }
+      try {
+        const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password)
+        if (credential.user) {
+          await updateProfile(credential.user, { displayName: fullName.trim() || null })
+        }
+        const idToken = await getFirebaseIdToken()
+        if (idToken) {
+          try {
+            const fresh = await exchangeFirebaseIdToken(idToken)
+            setSession(fresh)
+          } catch {
+            // Sign-in still succeeded; the AccessGate retries the request.
+          }
+          if (request) {
+            try {
+              await apiFetch('/api/v1/platform/access-requests', {
+                method: 'POST',
+                body: JSON.stringify({
+                  requested_role: request.requested_role,
+                  school_id: request.school_id,
+                  school_name: request.school_name,
+                }),
+              })
+            } catch {
+              // A failed request submission must not block account creation; the
+              // AccessGate retries it the next time the user opens the app.
+            }
+          }
+        }
+        return { ok: true, message: 'Your account is ready.' }
+      } catch (error) {
         return {
           ok: false,
           message: friendlyAuthError(error, 'We could not create your account. Please try again.'),
         }
       }
-
-      // Supabase returns a user without a session when email confirmation is on.
-      const needsEmailConfirmation = Boolean(data.user) && !data.session
-      // If Supabase signed the user straight in, register the pending request
-      // now. Otherwise it is submitted on first sign-in (see AccessGate).
-      if (data.session && request) {
-        try {
-          await apiFetch('/api/v1/platform/access-requests', {
-            method: 'POST',
-            body: JSON.stringify({
-              requested_role: request.requested_role,
-              school_id: request.school_id,
-              school_name: request.school_name,
-            }),
-          })
-        } catch {
-          // A failed request submission must not block account creation; the
-          // AccessGate retries it the next time the user opens the app.
-        }
-      }
-
-      return {
-        ok: true,
-        needsEmailConfirmation,
-        message: needsEmailConfirmation
-          ? 'Check your inbox and open the confirmation link to activate your account.'
-          : 'Your account is ready.',
-      }
     },
     [],
   )
 
   const signOut = useCallback<AuthContextValue['signOut']>(async () => {
-    const { error } = await supabase!.auth.signOut()
-    if (error) {
-      return { ok: false, message: friendlyAuthError(error, 'We could not sign you out. Please try again.') }
+    if (!firebaseAuth) {
+      setStoredSession(null)
+      setSession(null)
+      return { ok: true, message: 'You have been signed out.' }
     }
+    try {
+      await firebaseSignOut(firebaseAuth)
+    } catch {
+      // Local state is cleared regardless of the remote sign-out result.
+    }
+    setStoredSession(null)
+    setSession(null)
     setRecoveryMode(false)
     return { ok: true, message: 'You have been signed out.' }
   }, [])
 
-  const requestPasswordReset = useCallback<AuthContextValue['requestPasswordReset']>(
-    async (email) => {
-      const { error } = await supabase!.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
+  const requestPasswordReset = useCallback<AuthContextValue['requestPasswordReset']>(async (email) => {
+    if (!firebaseAuth) return { ok: false, message: 'Password reset is not available on this deployment.' }
+    try {
+      await sendPasswordResetEmail(firebaseAuth, email.trim(), {
+        url: `${window.location.origin}/reset-password`,
       })
-      // Account existence is never revealed: rate limiting and transport
-      // problems are the only failures surfaced to the user.
-      if (error && /rate limit|too many requests|over_email_send/i.test(error.message)) {
-        return { ok: false, message: friendlyAuthError(error, 'Too many attempts. Try again shortly.') }
+      return {
+        ok: true,
+        message: 'If an account exists for that address, a password reset email is on its way.',
+      }
+    } catch (error) {
+      if (/rate limit|too many requests|too-many-requests/i.test(friendlyAuthError(error, ''))) {
+        return { ok: false, message: 'Too many attempts. Try again shortly.' }
       }
       return {
         ok: true,
         message: 'If an account exists for that address, a password reset email is on its way.',
       }
-    },
-    [],
-  )
+    }
+  }, [])
 
   const updatePassword = useCallback<AuthContextValue['updatePassword']>(async (password) => {
-    const { error } = await supabase!.auth.updateUser({ password })
-    if (error) {
+    if (!firebaseAuth) return { ok: false, message: 'Password updates are not available on this deployment.' }
+    const params = new URLSearchParams(window.location.search)
+    const oobCode = params.get('oobCode')
+    if (!oobCode) {
+      return { ok: false, message: 'This password reset link cannot be used. Request a new one.' }
+    }
+    try {
+      await confirmPasswordReset(firebaseAuth, oobCode, password)
+      await firebaseSignOut(firebaseAuth)
+      setStoredSession(null)
+      setSession(null)
+      setRecoveryMode(false)
+      return { ok: true, message: 'Your password has been updated.' }
+    } catch (error) {
       return {
         ok: false,
         message: friendlyAuthError(error, 'We could not update your password. Please try again.'),
       }
     }
-    setRecoveryMode(false)
-    return { ok: true, message: 'Your password has been updated.' }
   }, [])
 
   const value = useMemo<AuthContextValue>(
@@ -283,23 +286,20 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       initialising,
       recoveryMode,
       signIn,
+      signInWithGoogle,
       signUp,
       signOut,
       requestPasswordReset,
       updatePassword,
     }),
-    [session, initialising, recoveryMode, signIn, signUp, signOut, requestPasswordReset, updatePassword],
+    [session, initialising, recoveryMode, signIn, signInWithGoogle, signUp, signOut, requestPasswordReset, updatePassword],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  return supabase ? (
-    <SupabaseAuthProvider>{children}</SupabaseAuthProvider>
-  ) : (
-    <LocalAuthProvider>{children}</LocalAuthProvider>
-  )
+  return <FirebaseAuthProvider>{children}</FirebaseAuthProvider>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
