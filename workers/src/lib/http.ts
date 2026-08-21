@@ -10,7 +10,7 @@ export function createApp<B extends object = Record<string, unknown>>(): Hono<En
   app.use('*', async (c, next) => {
     c.res.headers.set('Access-Control-Allow-Origin', '*')
     c.res.headers.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS')
-    c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-School-Id')
     if (c.req.method === 'OPTIONS') return c.body(null, 204)
     return next()
   })
