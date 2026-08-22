@@ -26,26 +26,18 @@ const screens: StitchScreen[] = [
   { slug: 'super-admin-multi-school', title: 'Super Admin Multi-School Dashboard', file: 'super_admin_multi_school.html', deviceType: 'DESKTOP', role: 'super_admin' },
   { slug: 'super-admin-platform', title: 'Super Admin Platform Overview', file: 'super_admin_platform.html', deviceType: 'DESKTOP', role: 'super_admin' },
   { slug: 'platform-config-ai', title: 'Platform Configuration & AI Settings', file: 'platform_config_ai.html', deviceType: 'DESKTOP', role: 'super_admin' },
-  { slug: 'super-admin-mobile', title: 'Super Admin Dashboard (Mobile)', file: 'super_admin_dashboard_mobile.html', deviceType: 'MOBILE', role: 'super_admin' },
-  { slug: 'super-admin-mobile-branding', title: 'Super Admin Dashboard (Mobile)', file: 'super_admin_dashboard_mobile_with_phikila_branding.html', deviceType: 'MOBILE', role: 'super_admin' },
 
   // ── Administrator ──────────────────────────────────────────────────────────
   { slug: 'admin-dashboard', title: 'Administrator Dashboard', file: 'admin_dashboard.html', deviceType: 'DESKTOP', role: 'admin' },
-  { slug: 'admin-mobile', title: 'Administrator Dashboard (Mobile)', file: 'administrator_dashboard_mobile.html', deviceType: 'MOBILE', role: 'admin' },
-  { slug: 'admin-mobile-branding', title: 'Administrator Dashboard (Mobile)', file: 'administrator_dashboard_mobile_with_phikila_branding.html', deviceType: 'MOBILE', role: 'admin' },
   { slug: 'school-tenancy', title: 'School Management & Tenancy Control', file: 'school_management_tenancy_control.html', deviceType: 'DESKTOP', role: 'admin' },
 
   // ── Academics ──────────────────────────────────────────────────────────────
   { slug: 'academics-dashboard', title: 'Academics Dashboard', file: 'academics_dashboard.html', deviceType: 'DESKTOP', role: 'academics' },
   { slug: 'academics-command-center', title: 'Academics Command Center & Analytics', file: 'academics_command_center.html', deviceType: 'DESKTOP', role: 'academics' },
-  { slug: 'academics-mobile', title: 'Academics Dashboard (Mobile)', file: 'academics_dashboard_mobile.html', deviceType: 'MOBILE', role: 'academics' },
-  { slug: 'academics-mobile-branding', title: 'Academics Dashboard (Mobile)', file: 'academics_dashboard_mobile_with_phikila_branding.html', deviceType: 'MOBILE', role: 'academics' },
 
   // ── Finance ────────────────────────────────────────────────────────────────
   { slug: 'finance-dashboard', title: 'Finance Dashboard', file: 'finance_dashboard.html', deviceType: 'DESKTOP', role: 'finance' },
   { slug: 'finance-bursar', title: 'Finance Dashboard for Bursar Management', file: 'finance_dashboard_for_bursar_management.html', deviceType: 'DESKTOP', role: 'finance' },
-  { slug: 'finance-mobile', title: 'Finance Dashboard (Mobile)', file: 'finance_dashboard_mobile.html', deviceType: 'MOBILE', role: 'finance' },
-  { slug: 'finance-mobile-branding', title: 'Finance Dashboard (Mobile)', file: 'finance_dashboard_mobile_with_phikila_branding.html', deviceType: 'MOBILE', role: 'finance' },
 
   // ── Students / parents ─────────────────────────────────────────────────────
   { slug: 'student-parent-dashboard', title: 'Student & Parent Dashboard', file: 'student_parent_dashboard.html', deviceType: 'DESKTOP', role: 'student' },
@@ -54,24 +46,16 @@ const screens: StitchScreen[] = [
   { slug: 'student-directory-actions', title: 'Student Directory with Quick Contact Actions', file: 'student_directory_with_quick_contact_actions.html', deviceType: 'DESKTOP' },
   { slug: 'student-profile', title: 'Student Profile', file: 'student_profile.html', deviceType: 'DESKTOP' },
   { slug: 'student-profile-parent', title: 'Student Profile with Parent Contact & Photo Upload', file: 'student_profile_with_parent_contact_photo_upload.html', deviceType: 'DESKTOP' },
-  { slug: 'student-directory-mobile', title: 'Student Directory (Mobile)', file: 'student_directory_mobile.html', deviceType: 'MOBILE' },
-  { slug: 'student-profile-mobile', title: 'Student Profile (Mobile)', file: 'student_profile_mobile.html', deviceType: 'MOBILE' },
-  { slug: 'student-profile-mobile-edit', title: 'Student Profile (Mobile) with Contact & Photo Edits', file: 'student_profile_mobile_with_contact_photo_edits.html', deviceType: 'MOBILE' },
-  { slug: 'student-profile-mobile-branding', title: 'Student Profile (Mobile)', file: 'student_profile_mobile_with_phikila_branding.html', deviceType: 'MOBILE' },
 
   // ── Teachers ───────────────────────────────────────────────────────────────
   { slug: 'teacher-dashboard', title: 'Teacher Dashboard', file: 'teacher_dashboard.html', deviceType: 'DESKTOP', role: 'teacher' },
   { slug: 'teacher-attendance', title: 'Teacher Dashboard with Attendance Marking', file: 'teacher_dashboard_with_attendance_marking.html', deviceType: 'DESKTOP', role: 'teacher' },
-  { slug: 'teacher-mobile', title: 'Teacher Dashboard (Mobile)', file: 'teacher_dashboard_mobile.html', deviceType: 'MOBILE', role: 'teacher' },
-  { slug: 'teacher-mobile-branding', title: 'Teacher Dashboard (Mobile)', file: 'teacher_dashboard_mobile_with_phikila_branding.html', deviceType: 'MOBILE', role: 'teacher' },
 
   // ── Timetable ──────────────────────────────────────────────────────────────
   { slug: 'timetable-workspace', title: 'Timetable Workspace', file: 'timetable_workspace.html', deviceType: 'DESKTOP' },
   { slug: 'timetable-ai-fab', title: 'Timetable Workspace with AI FAB & Collapsible Rails', file: 'timetable_workspace_with_ai_fab_collapsible_rails.html', deviceType: 'DESKTOP' },
   { slug: 'timetable-advanced', title: 'Advanced Timetable Workspace (aSc Style)', file: 'advanced_timetable_workspace_asc_style.html', deviceType: 'DESKTOP' },
   { slug: 'timetable-animated', title: 'Animated Parallelogram Timetable Workspace', file: 'animated_parallelogram_timetable_workspace.html', deviceType: 'DESKTOP' },
-  { slug: 'timetable-mobile', title: 'Timetable Workspace (Mobile)', file: 'timetable_workspace_mobile.html', deviceType: 'MOBILE' },
-  { slug: 'timetable-mobile-branding', title: 'Timetable Workspace (Mobile)', file: 'timetable_workspace_mobile_with_phikila_branding.html', deviceType: 'MOBILE' },
 
   // ── Admissions ─────────────────────────────────────────────────────────────
   { slug: 'admissions-dashboard', title: 'Admissions & Registrar Dashboard', file: 'admissions_dashboard.html', deviceType: 'DESKTOP' },
@@ -97,8 +81,6 @@ const screens: StitchScreen[] = [
   { slug: 'settings', title: 'Settings & Configuration', file: 'settings_config.html', deviceType: 'DESKTOP' },
   { slug: 'settings-alt', title: 'Settings & Configuration', file: 'settings_configuration.html', deviceType: 'DESKTOP' },
   { slug: 'settings-wallpaper', title: 'Settings & Configuration with Wallpaper Controls', file: 'settings_configuration_with_wallpaper_controls.html', deviceType: 'DESKTOP' },
-  { slug: 'settings-mobile', title: 'Settings & Configuration (Mobile)', file: 'settings_configuration_mobile.html', deviceType: 'MOBILE' },
-  { slug: 'settings-mobile-wallpaper', title: 'Settings & Configuration (Mobile) with Wallpaper Controls', file: 'settings_configuration_mobile_with_wallpaper_controls.html', deviceType: 'MOBILE' },
 
   // ── Other modules ──────────────────────────────────────────────────────────
   { slug: 'board-dashboard', title: 'Board Management Dashboard', file: 'board_dashboard.html', deviceType: 'DESKTOP' },

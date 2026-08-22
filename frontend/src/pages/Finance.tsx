@@ -2,10 +2,58 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, LoadingBlock, Spinner } from '../components/States'
+import { DataTable, type Column } from '../components/DataTable'
 import { friendlyApiError } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { finance, type FeeStructure, type Invoice, type Payment, type FinanceOverview } from '../lib/finance'
 import { streamAnalytics } from '../lib/ai'
+
+const INVOICE_COLUMNS: Column<Invoice>[] = [
+  { key: 'student', header: 'Student', value: (i) => i.student_id, render: (i) => `Student #${i.student_id}` },
+  { key: 'fee', header: 'Fee', value: (i) => i.fee_structure_id ?? '', render: (i) => `Fee #${i.fee_structure_id}` },
+  {
+    key: 'amount',
+    header: 'Amount',
+    sortable: true,
+    value: (i) => Number(i.amount),
+    render: (i) => `KES ${Number(i.amount).toLocaleString()}`,
+  },
+  {
+    key: 'balance',
+    header: 'Balance',
+    sortable: true,
+    value: (i) => Number(i.balance),
+    render: (i) => `KES ${Number(i.balance).toLocaleString()}`,
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    value: (i) => i.status,
+    render: (i) => (
+      <Badge tone={i.status === 'paid' ? 'success' : i.status === 'pending' ? 'warning' : 'danger'}>{i.status}</Badge>
+    ),
+  },
+]
+
+const PAYMENT_COLUMNS: Column<Payment>[] = [
+  {
+    key: 'date',
+    header: 'Date',
+    sortable: true,
+    value: (p) => p.created_at ?? '',
+    render: (p) => (p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'),
+  },
+  { key: 'student', header: 'Student', value: (p) => p.student_id, render: (p) => `Student #${p.student_id}` },
+  { key: 'method', header: 'Method', sortable: true, value: (p) => p.payment_method || '', render: (p) => p.payment_method || '—' },
+  {
+    key: 'amount',
+    header: 'Amount',
+    sortable: true,
+    value: (p) => Number(p.amount),
+    render: (p) => <strong>KES {Number(p.amount).toLocaleString()}</strong>,
+  },
+  { key: 'reference', header: 'Reference', value: (p) => p.reference_number || '', render: (p) => p.reference_number || '—' },
+]
 
 export default function FinancePage() {
   const { notify } = useToast()
@@ -153,32 +201,7 @@ export default function FinancePage() {
               </div>
               {showNewInvoice && <NewInvoiceForm feeStructures={feeStructures} onCreated={() => { setShowNewInvoice(false); void load() }} onCancel={() => setShowNewInvoice(false)} />}
               {!invoices.length ? <EmptyState title="No invoices" description="Create invoices for students." /> : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Student</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Fee</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'right' }}>Balance</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoices.map((inv) => (
-                        <tr key={inv.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                          <td style={{ padding: 'var(--space-2)' }}>Student #{inv.student_id}</td>
-                          <td style={{ padding: 'var(--space-2)' }}>Fee #{inv.fee_structure_id}</td>
-                          <td style={{ padding: 'var(--space-2)', textAlign: 'right' }}>KES {Number(inv.amount).toLocaleString()}</td>
-                          <td style={{ padding: 'var(--space-2)', textAlign: 'right' }}>KES {Number(inv.balance).toLocaleString()}</td>
-                          <td style={{ padding: 'var(--space-2)' }}>
-                            <Badge tone={inv.status === 'paid' ? 'success' : inv.status === 'pending' ? 'warning' : 'danger'}>{inv.status}</Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable caption="Invoices" columns={INVOICE_COLUMNS} rows={invoices} rowKey={(i) => i.id} searchable searchPlaceholder="Search invoices…" pageSize={25} />
               )}
             </section>
           )}
@@ -191,30 +214,7 @@ export default function FinancePage() {
               </div>
               {showNewPayment && <NewPaymentForm onCreated={() => { setShowNewPayment(false); void load() }} onCancel={() => setShowNewPayment(false)} />}
               {!payments.length ? <EmptyState title="No payments" description="Record payments against invoices." /> : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Date</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Student</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Method</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Reference</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {payments.map((p) => (
-                        <tr key={p.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                          <td style={{ padding: 'var(--space-2)' }}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
-                          <td style={{ padding: 'var(--space-2)' }}>Student #{p.student_id}</td>
-                          <td style={{ padding: 'var(--space-2)' }}>{p.payment_method || '—'}</td>
-                          <td style={{ padding: 'var(--space-2)', textAlign: 'right', fontWeight: 700 }}>KES {Number(p.amount).toLocaleString()}</td>
-                          <td style={{ padding: 'var(--space-2)' }}>{p.reference_number || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable caption="Payments" columns={PAYMENT_COLUMNS} rows={payments} rowKey={(p) => p.id} searchable searchPlaceholder="Search payments…" pageSize={25} />
               )}
             </section>
           )}

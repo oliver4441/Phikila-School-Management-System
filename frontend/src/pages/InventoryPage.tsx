@@ -2,8 +2,39 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState, LoadingBlock } from '../components/States'
+import { DataTable, type Column } from '../components/DataTable'
 import { friendlyApiError } from '../lib/api'
 import { inventory, type InventoryItem } from '../lib/inventory'
+
+const ITEM_COLUMNS: Column<InventoryItem>[] = [
+  {
+    key: 'name',
+    header: 'Name',
+    sortable: true,
+    value: (i) => i.name,
+    render: (i) => <strong>{i.name}</strong>,
+  },
+  { key: 'category', header: 'Category', sortable: true, value: (i) => i.category, render: (i) => i.category },
+  { key: 'sku', header: 'SKU', value: (i) => i.sku || '', render: (i) => i.sku || '—' },
+  {
+    key: 'quantity',
+    header: 'Qty',
+    sortable: true,
+    value: (i) => i.quantity,
+    render: (i) => `${i.quantity} ${i.unit || ''}`,
+  },
+  { key: 'location', header: 'Location', value: (i) => i.location || '', render: (i) => i.location || '—' },
+  {
+    key: 'status',
+    header: 'Status',
+    value: (i) => i.status,
+    render: (i) => (
+      <Badge tone={i.quantity <= i.reorder_level ? 'warning' : i.status === 'Out of Stock' ? 'danger' : 'success'}>
+        {i.status}
+      </Badge>
+    ),
+  },
+]
 
 export default function InventoryPage() {
   const [items, setItems] = useState<InventoryItem[] | null>(null)
@@ -51,42 +82,20 @@ export default function InventoryPage() {
       ) : !items?.length ? (
         <EmptyState title="No inventory items" description="Add your first store item to get started." />
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Name</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Category</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>SKU</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Qty</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Location</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                <th style={{ padding: 'var(--space-2)' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                  <td style={{ padding: 'var(--space-2)', fontWeight: 600 }}>{i.name}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{i.category}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{i.sku || '—'}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{i.quantity} {i.unit || ''}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{i.location || '—'}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>
-                    <Badge tone={i.quantity <= i.reorder_level ? 'warning' : i.status === 'Out of Stock' ? 'danger' : 'success'}>
-                      {i.status}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: 'var(--space-2)' }}>
-                    <button className="button button--ghost button--sm" onClick={() => setSelected(i)}>
-                      Manage
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Inventory items"
+          columns={ITEM_COLUMNS}
+          rows={items}
+          rowKey={(i) => i.id}
+          searchable
+          searchPlaceholder="Search items…"
+          pageSize={25}
+          rowActions={(i) => (
+            <button className="button button--ghost button--sm" onClick={() => setSelected(i)}>
+              Manage
+            </button>
+          )}
+        />
       )}
     </div>
   )

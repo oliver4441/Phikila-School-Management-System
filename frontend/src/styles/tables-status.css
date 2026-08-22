@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Tables
+   ========================================================================== */
+.table-wrap {
+  display: none;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table caption {
+  text-align: left;
+}
+
+.table th,
+.table td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--color-line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table thead th {
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, var(--brand-emerald) 5%, var(--color-surface-muted));
+}
+
+.table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Mobile: one readable card per record instead of a squeezed table. */
+.record-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.record-card {
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.record-card__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.record-card__row:last-child {
+  border-bottom: 0;
+}
+
+.record-card dt {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.record-card dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.record-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .table-wrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+  }
+
+  .record-cards {
+    display: none;
+  }
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
+}
+
+/* ==========================================================================
+   Status screens
+   ========================================================================== */
+.status-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 100vh;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+}
+
+.status-screen__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.status-screen__code {
+  color: var(--color-ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.status-screen__title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 6vw, 2.25rem);
+}
+
+.status-screen__message {
+  max-width: 32rem;
+  color: var(--color-ink-muted);
+}
+
+/* Status screens rendered inside the app shell should not force 100vh. */
+.app-shell__content .status-screen {
+  min-height: 50vh;
+}
+

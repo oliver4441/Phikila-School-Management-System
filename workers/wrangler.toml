@@ -4,10 +4,13 @@ account_id = "549a05783941248fb5a7f53ede7c54fa"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
+observability = { enabled = true }
 
 [vars]
 ENVIRONMENT = "production"
 FIREBASE_PROJECT_ID = "omix-systems-cd1af"
+SOLVER_ENABLED = true
+# AI_ENCRYPTION_KEY is set via: wrangler secret put AI_ENCRYPTION_KEY (do NOT put it in [vars])
 
 [[r2_buckets]]
 binding = "MEDIA"

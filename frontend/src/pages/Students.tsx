@@ -2,9 +2,47 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState, LoadingBlock } from '../components/States'
+import { DataTable, type Column } from '../components/DataTable'
 import { friendlyApiError } from '../lib/api'
 import { useToast } from '../components/Toast'
 import { students, type Student, type StudentListResponse } from '../lib/students'
+
+const STUDENT_COLUMNS: Column<Student>[] = [
+  {
+    key: 'admission_number',
+    header: 'Adm No',
+    sortable: true,
+    value: (s) => s.admission_number,
+    render: (s) => <strong>{s.admission_number}</strong>,
+  },
+  {
+    key: 'name',
+    header: 'Name',
+    sortable: true,
+    value: (s) => `${s.first_name} ${s.middle_name} ${s.last_name}`,
+    render: (s) => `${s.first_name} ${s.middle_name} ${s.last_name}`,
+  },
+  { key: 'gender', header: 'Gender', value: (s) => s.gender || '', render: (s) => s.gender || '—' },
+  {
+    key: 'date_of_birth',
+    header: 'DOB',
+    sortable: true,
+    value: (s) => s.date_of_birth || '',
+    render: (s) => s.date_of_birth || '—',
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    sortable: true,
+    value: (s) => s.status,
+    render: (s) => (
+      <Badge tone={s.status === 'active' ? 'success' : s.status === 'suspended' ? 'danger' : 'warning'}>
+        {s.status}
+      </Badge>
+    ),
+  },
+  { key: 'guardians', header: 'Guardians', value: (s) => s.guardians?.length || 0, render: (s) => s.guardians?.length || 0 },
+]
 
 export default function StudentsPage() {
   const [data, setData] = useState<StudentListResponse | null>(null)
@@ -15,6 +53,7 @@ export default function StudentsPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -100,42 +139,20 @@ export default function StudentsPage() {
         <EmptyState title="No students found" description={search ? 'Try a different search.' : 'Admit your first student to get started.'} />
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Adm No</th>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Name</th>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Gender</th>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>DOB</th>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                  <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Guardians</th>
-                  <th style={{ padding: 'var(--space-2)' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((s) => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                    <td style={{ padding: 'var(--space-2)', fontWeight: 600 }}>{s.admission_number}</td>
-                    <td style={{ padding: 'var(--space-2)' }}>{s.first_name} {s.middle_name} {s.last_name}</td>
-                    <td style={{ padding: 'var(--space-2)' }}>{s.gender || '—'}</td>
-                    <td style={{ padding: 'var(--space-2)' }}>{s.date_of_birth || '—'}</td>
-                    <td style={{ padding: 'var(--space-2)' }}>
-                      <Badge tone={s.status === 'active' ? 'success' : s.status === 'suspended' ? 'danger' : 'warning'}>
-                        {s.status}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: 'var(--space-2)' }}>{s.guardians?.length || 0}</td>
-                    <td style={{ padding: 'var(--space-2)' }}>
-                      <button className="button button--ghost button--sm" onClick={() => setSelectedStudent(s)}>
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Students"
+            columns={STUDENT_COLUMNS}
+            rows={data.items}
+            rowKey={(s) => s.id}
+            selectable
+            selectedIds={selectedIds}
+            onSelectedIdsChange={setSelectedIds}
+            rowActions={(s) => (
+              <button className="button button--ghost button--sm" onClick={() => setSelectedStudent(s)}>
+                View
+              </button>
+            )}
+          />
 
           {/* Pagination */}
           {data.pages > 1 && (

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState, LoadingBlock } from '../components/States'
+import { DataTable, type Column } from '../components/DataTable'
 import { friendlyApiError } from '../lib/api'
 import { admissions, type Application } from '../lib/admissions'
 
@@ -12,6 +13,38 @@ const STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> 
   pending: 'neutral',
   rejected: 'danger',
 }
+
+const APPLICATION_COLUMNS: Column<Application>[] = [
+  {
+    key: 'number',
+    header: 'No',
+    sortable: true,
+    value: (a) => a.application_number ?? a.id,
+    render: (a) => <strong>{a.application_number ?? `#${a.id}`}</strong>,
+  },
+  {
+    key: 'applicant',
+    header: 'Applicant',
+    sortable: true,
+    value: (a) => `${a.first_name} ${a.middle_name} ${a.last_name}`,
+    render: (a) => `${a.first_name} ${a.middle_name} ${a.last_name}`,
+  },
+  {
+    key: 'level',
+    header: 'Level',
+    sortable: true,
+    value: (a) => a.applying_for_level || '',
+    render: (a) => a.applying_for_level || '—',
+  },
+  { key: 'parent', header: 'Parent', value: (a) => a.parent_name || '', render: (a) => a.parent_name || '—' },
+  {
+    key: 'status',
+    header: 'Status',
+    sortable: true,
+    value: (a) => a.status,
+    render: (a) => <Badge tone={STATUS_TONE[a.status] ?? 'neutral'}>{a.status}</Badge>,
+  },
+]
 
 export default function AdmissionsPage() {
   const [items, setItems] = useState<Application[] | null>(null)
@@ -57,38 +90,20 @@ export default function AdmissionsPage() {
       ) : !items?.length ? (
         <EmptyState title="No applications" description="Create your first admission application to get started." />
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>No</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Applicant</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Level</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Parent</th>
-                <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                <th style={{ padding: 'var(--space-2)' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((a) => (
-                <tr key={a.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                  <td style={{ padding: 'var(--space-2)', fontWeight: 600 }}>{a.application_number ?? `#${a.id}`}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{a.first_name} {a.middle_name} {a.last_name}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{a.applying_for_level || '—'}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>{a.parent_name || '—'}</td>
-                  <td style={{ padding: 'var(--space-2)' }}>
-                    <Badge tone={STATUS_TONE[a.status] ?? 'neutral'}>{a.status}</Badge>
-                  </td>
-                  <td style={{ padding: 'var(--space-2)' }}>
-                    <button className="button button--ghost button--sm" onClick={() => setSelected(a)}>
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Admission applications"
+          columns={APPLICATION_COLUMNS}
+          rows={items}
+          rowKey={(a) => a.id}
+          searchable
+          searchPlaceholder="Search applicants…"
+          pageSize={25}
+          rowActions={(a) => (
+            <button className="button button--ghost button--sm" onClick={() => setSelected(a)}>
+              View
+            </button>
+          )}
+        />
       )}
     </div>
   )

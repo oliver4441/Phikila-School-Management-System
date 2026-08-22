@@ -1,0 +1,5 @@
+export { PlatformDashboardPage } from './components/PlatformDashboardPage'
+export { PlatformSchoolsPage } from './components/PlatformSchoolsPage'
+export { PlatformSchoolDetailPage } from './components/PlatformSchoolDetailPage'
+export { PlatformRequestsPage } from './components/PlatformRequestsPage'
+export { PlatformAdminsPage } from './components/PlatformAdminsPage'
