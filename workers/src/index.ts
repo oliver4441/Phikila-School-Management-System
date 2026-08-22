@@ -23,6 +23,7 @@ import { principalRoutes } from './routes/principal'
 import { llmRoutes } from './routes/llm'
 import { ocrRoutes } from './routes/ocr'
 import { aiRoutes } from './routes/ai'
+import { analyticsRoutes } from './routes/analytics'
 
 const app = createApp<Bindings>()
 
@@ -47,6 +48,7 @@ app.route('/api/v1/principal', principalRoutes)
 app.route('/api/v1/llm', llmRoutes)
 app.route('/api/v1/ocr', ocrRoutes)
 app.route('/api/v1/ai', aiRoutes)
+app.route('/api/v1/analytics', analyticsRoutes)
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
 

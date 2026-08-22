@@ -1,3 +1,17 @@
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  ⚠️  DANGER — DO NOT RE-RUN THIS FILE                                   ║
+-- ╠═══════════════════════════════════════════════════════════════════════╣
+-- ║  This migration DROPs the ENTIRE public schema (every table, all data). ║
+-- ║  It must ONLY ever run once, on a fresh database, ahead of              ║
+-- ║  001_initial_schema.sql. Never apply it against a database that already ║
+-- ║  holds live data.                                                      ║
+-- ║                                                                         ║
+-- ║  The automated migration runner (workers/scripts/apply-migrations.sh)   ║
+-- ║  records applied files in the `_migrations` table and skips any file    ║
+-- ║  already recorded, which prevents this file from being re-applied. Do   ║
+-- ║  NOT remove or bypass that guard.                                      ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
 -- ════════════════════════════════════════════════════════════════════════
 -- 000 — Drop legacy FastAPI schema (intentional fresh start)
 -- ════════════════════════════════════════════════════════════════════════

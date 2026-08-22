@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first wrangler dev",
+    "deploy": "NODE_OPTIONS=--dns-result-order=ipv4first wrangler deploy",
     "build": "wrangler deploy --dry-run --outdir dist",
     "typecheck": "tsc --noEmit"
   },

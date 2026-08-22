@@ -19,17 +19,13 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      - name: Check out production code
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install backend dependencies
-        run: python -m pip install -r requirements.txt
+      - name: Install postgresql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Validate database secret
         run: |
@@ -38,14 +34,5 @@ jobs:
             exit 1
           }
 
-      - name: Show migration plan
-        run: |
-          alembic current
-          alembic heads
-          echo "Production migration target: b7d2e9a41c08"
-
-      - name: Apply migrations
-        run: alembic upgrade b7d2e9a41c08
-
-      - name: Verify migration state
-        run: alembic current
+      - name: Apply SQL migrations
+        run: bash workers/scripts/apply-migrations.sh
