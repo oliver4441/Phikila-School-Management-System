@@ -1,0 +1,151 @@
+/* ==========================================================================
+   Dark mode component overrides
+   ========================================================================== */
+
+/* Sidebar is always dark-themed, deepen in dark mode */
+[data-theme="dark"] .sidebar {
+  background: #0b1120;
+}
+
+[data-theme="dark"] .sidebar__link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .sidebar__link--active {
+  background: rgba(96, 165, 250, 0.15);
+  border-left-color: var(--brand-emerald);
+}
+
+/* Auth shell dark */
+[data-theme="dark"] .auth-shell__brand {
+  background: #0b1120;
+}
+
+[data-theme="dark"] .auth-shell__brand .logo__word { color: #f0f2f5; }
+[data-theme="dark"] .auth-shell__brand .logo__sub { color: #9ca3af; }
+
+[data-theme="dark"] .auth-shell__wordmark span {
+  color: #6b7280;
+}
+
+/* Tables dark */
+[data-theme="dark"] .table-wrap {
+  border-color: var(--color-line);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+  background: var(--color-surface-muted);
+}
+
+/* Forms dark */
+[data-theme="dark"] .input {
+  background: var(--color-surface);
+  border-color: var(--color-line);
+  color: var(--color-ink);
+}
+
+[data-theme="dark"] .input:focus {
+  border-color: var(--brand-emerald);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+}
+
+[data-theme="dark"] .checkbox input {
+  accent-color: var(--brand-emerald);
+}
+
+/* Skeleton dark */
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, #232733 25%, #2d3348 50%, #232733 75%);
+  background-size: 200% 100%;
+}
+
+/* Badge dark */
+[data-theme="dark"] .badge {
+  border-color: var(--color-line);
+  background: var(--color-surface-muted);
+  color: var(--color-ink-muted);
+}
+
+/* Tabs dark */
+[data-theme="dark"] .tab--active {
+  background: var(--brand-navy);
+  color: #fff;
+}
+
+/* Dialog dark */
+[data-theme="dark"] .dialog-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Toast dark */
+[data-theme="dark"] .toast {
+  border-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+/* Topbar dark */
+[data-theme="dark"] .topbar {
+  border-bottom-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+/* Bottom nav dark */
+[data-theme="dark"] .bottom-nav {
+  border-top-color: var(--color-line);
+  background: var(--color-surface);
+}
+
+[data-theme="dark"] .bottom-nav__item--active {
+  color: var(--brand-emerald);
+  box-shadow: inset 0 2px 0 var(--brand-emerald);
+}
+
+/* Summary cards dark */
+[data-theme="dark"] .summary-card__link:hover {
+  background: var(--color-surface-muted);
+}
+
+/* Alert dark */
+[data-theme="dark"] .alert--success {
+  border-color: rgba(52, 211, 153, 0.2);
+  background: var(--color-success-soft);
+  color: #a7f3d0;
+}
+
+[data-theme="dark"] .alert--error {
+  border-color: rgba(248, 113, 113, 0.2);
+  background: var(--color-danger-soft);
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .alert--info {
+  border-color: rgba(96, 165, 250, 0.2);
+  background: var(--color-info-soft);
+  color: #93bbfd;
+}
+
+/* Chip toggle dark */
+[data-theme="dark"] .chip-toggle--on {
+  border-color: var(--brand-emerald);
+  background: var(--color-success-soft);
+}
+
+/* Palette dark */
+[data-theme="dark"] .palette__item-icon {
+  background: var(--color-success-soft);
+  color: var(--brand-emerald);
+}
+
+/* Focus ring — emerald for dark mode */
+[data-theme="dark"] :focus-visible {
+  outline-color: var(--brand-emerald);
+}
+
+/* Now card */
+[data-theme="dark"] .now-card {
+  border-left-color: var(--brand-emerald);
+}
+
+[data-theme="dark"] .now-card__label {
+  color: var(--brand-emerald);
+}

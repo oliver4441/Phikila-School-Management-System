@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Auth screens (mobile-first)
+   ========================================================================== */
+.auth-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.auth-shell__brand {
+  padding: var(--space-5) var(--space-4);
+  background:
+    radial-gradient(800px 400px at 110% 110%, rgba(16, 185, 129, 0.14), transparent 60%),
+    radial-gradient(600px 300px at -10% -20%, rgba(245, 158, 11, 0.08), transparent 55%),
+    linear-gradient(160deg, #0e2338 0%, var(--brand-navy-deep) 60%);
+  color: #f2f6fa;
+}
+
+.auth-shell__brand-inner {
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
+.auth-shell__brand-inner > svg {
+  margin-bottom: var(--space-4);
+}
+
+/* ---- brand lockup ---- */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.logo__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.logo__word {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+
+.logo__sub {
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.logo--light .logo__word { color: var(--color-navy, #0f2a47); }
+.logo--light .logo__sub { color: #5b7183; }
+.logo--dark .logo__word { color: #ffffff; }
+.logo--dark .logo__sub { color: #9fb3c4; }
+
+/* The auth panel shows the mark on its own above the wordmark. */
+.auth-shell__brand .logo-mark { margin-bottom: var(--space-4); }
+
+.eyebrow {
+  margin-bottom: var(--space-2);
+  color: var(--brand-gold);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.auth-shell__wordmark {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 8vw, 3rem);
+  line-height: 1.05;
+}
+
+.auth-shell__wordmark span {
+  display: block;
+  font-size: 0.55em;
+  color: #c3d2de;
+}
+
+.auth-shell__intro {
+  max-width: 32rem;
+  margin-top: var(--space-3);
+  color: #b8c8d6;
+  font-size: 0.95rem;
+}
+
+.auth-shell__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  padding: var(--space-5) var(--space-4);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 26rem;
+  padding: var(--space-5) var(--space-4);
+  border: 1px solid var(--surface-glass-border);
+  background: var(--surface-glass);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-card__header {
+  margin-bottom: var(--space-4);
+}
+
+.auth-card__title {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+}
+
+.auth-card__subtitle {
+  margin-top: var(--space-2);
+  color: var(--color-ink-muted);
+  font-size: 0.9375rem;
+}
+
+.auth-shell__footer {
+  width: 100%;
+  max-width: 26rem;
+  margin-top: var(--space-4);
+  text-align: center;
+}
+
+.auth-shell__footer-text {
+  color: var(--color-ink-muted);
+  font-size: 0.9rem;
+}
+
+@media (min-width: 900px) {
+  .auth-shell {
+    flex-direction: row;
+  }
+
+  .auth-shell__brand {
+    flex: 1 1 45%;
+    display: flex;
+    align-items: center;
+    padding: var(--space-6) clamp(2rem, 5vw, 4.5rem);
+  }
+
+  .auth-shell__panel {
+    flex: 1 1 55%;
+    justify-content: center;
+    padding: var(--space-6);
+  }
+
+  .auth-card {
+    padding: var(--space-6);
+  }
+}
+
