@@ -2,8 +2,52 @@ import { useCallback, useEffect, useState } from 'react'
 import { PageHeader } from '../components/PageHeader'
 import { Alert } from '../components/Alert'
 import { Badge, EmptyState, ErrorState, LoadingBlock } from '../components/States'
+import { DataTable, type Column } from '../components/DataTable'
 import { friendlyApiError } from '../lib/api'
 import { library, type Book, type Loan } from '../lib/library'
+
+const BOOK_COLUMNS: Column<Book>[] = [
+  { key: 'title', header: 'Title', sortable: true, value: (b) => b.title, render: (b) => <strong>{b.title}</strong> },
+  { key: 'author', header: 'Author', sortable: true, value: (b) => b.author || '', render: (b) => b.author || '—' },
+  { key: 'category', header: 'Category', value: (b) => b.category, render: (b) => b.category },
+  {
+    key: 'copies',
+    header: 'Copies',
+    sortable: true,
+    value: (b) => b.available_copies,
+    render: (b) => `${b.available_copies} / ${b.total_copies}`,
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    value: (b) => b.status,
+    render: (b) => <Badge tone={b.available_copies > 0 ? 'success' : 'warning'}>{b.status}</Badge>,
+  },
+]
+
+function loanColumns(titleOf: (loan: Loan) => string): Column<Loan>[] {
+  return [
+    {
+      key: 'borrower',
+      header: 'Borrower',
+      sortable: true,
+      value: (l) => l.borrower_name,
+      render: (l) => <strong>{l.borrower_name}</strong>,
+    },
+    { key: 'type', header: 'Type', value: (l) => l.borrower_type, render: (l) => l.borrower_type },
+    { key: 'book', header: 'Book', sortable: true, value: titleOf, render: titleOf },
+    { key: 'loan_date', header: 'Loan Date', sortable: true, value: (l) => l.loan_date, render: (l) => l.loan_date },
+    { key: 'due_date', header: 'Due', sortable: true, value: (l) => l.due_date || '', render: (l) => l.due_date || '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      value: (l) => l.status,
+      render: (l) => (
+        <Badge tone={l.status === 'returned' ? 'success' : l.status === 'overdue' ? 'danger' : 'warning'}>{l.status}</Badge>
+      ),
+    },
+  ]
+}
 
 export default function LibraryPage() {
   const [books, setBooks] = useState<Book[] | null>(null)
@@ -78,72 +122,27 @@ export default function LibraryPage() {
             !books?.length ? (
               <EmptyState title="No books" description="Add your first book title to get started." />
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                      <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Title</th>
-                      <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Author</th>
-                      <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Category</th>
-                      <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Copies</th>
-                      <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {books.map((b) => (
-                      <tr key={b.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                        <td style={{ padding: 'var(--space-2)', fontWeight: 600 }}>{b.title}</td>
-                        <td style={{ padding: 'var(--space-2)' }}>{b.author || '—'}</td>
-                        <td style={{ padding: 'var(--space-2)' }}>{b.category}</td>
-                        <td style={{ padding: 'var(--space-2)' }}>{b.available_copies} / {b.total_copies}</td>
-                        <td style={{ padding: 'var(--space-2)' }}>
-                          <Badge tone={b.available_copies > 0 ? 'success' : 'warning'}>{b.status}</Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable caption="Library books" columns={BOOK_COLUMNS} rows={books} rowKey={(b) => b.id} searchable searchPlaceholder="Search titles…" pageSize={25} />
             )
           ) : !loans?.length ? (
             <EmptyState title="No loans" description="Issue a book to a student, teacher or staff member." />
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', fontSize: '0.875rem', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--color-line)' }}>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Borrower</th>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Type</th>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Book</th>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Loan Date</th>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Due</th>
-                    <th style={{ padding: 'var(--space-2)', textAlign: 'left' }}>Status</th>
-                    <th style={{ padding: 'var(--space-2)' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loans.map((l) => (
-                    <tr key={l.id} style={{ borderBottom: '1px solid var(--color-line)' }}>
-                      <td style={{ padding: 'var(--space-2)', fontWeight: 600 }}>{l.borrower_name}</td>
-                      <td style={{ padding: 'var(--space-2)' }}>{l.borrower_type}</td>
-                      <td style={{ padding: 'var(--space-2)' }}>{books?.find((b) => b.id === l.book_id)?.title ?? `#${l.book_id}`}</td>
-                      <td style={{ padding: 'var(--space-2)' }}>{l.loan_date}</td>
-                      <td style={{ padding: 'var(--space-2)' }}>{l.due_date || '—'}</td>
-                      <td style={{ padding: 'var(--space-2)' }}>
-                        <Badge tone={l.status === 'returned' ? 'success' : l.status === 'overdue' ? 'danger' : 'warning'}>{l.status}</Badge>
-                      </td>
-                      <td style={{ padding: 'var(--space-2)' }}>
-                        {l.status !== 'returned' && (
-                          <button className="button button--secondary button--sm" disabled={busy} onClick={() => returnLoan(l.id)}>
-                            Return
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              caption="Book loans"
+              columns={loanColumns((l) => books?.find((b) => b.id === l.book_id)?.title ?? `#${l.book_id}`)}
+              rows={loans}
+              rowKey={(l) => l.id}
+              searchable
+              searchPlaceholder="Search borrowers…"
+              pageSize={25}
+              rowActions={(l) =>
+                l.status !== 'returned' ? (
+                  <button className="button button--secondary button--sm" disabled={busy} onClick={() => returnLoan(l.id)}>
+                    Return
+                  </button>
+                ) : null
+              }
+            />
           )}
         </>
       )}
