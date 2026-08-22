@@ -28,7 +28,20 @@
 do $$
 declare
   r record;
+  app_tables int;
 begin
+  -- SAFETY GUARD: if the Worker schema is already initialized (users/school_info
+  -- exist) this database is NOT a fresh start. Skipping prevents the runner from
+  -- ever wiping live data if this file is applied to an existing environment.
+  select count(*) into app_tables
+  from information_schema.tables
+  where table_schema = 'public' and table_name in ('users', 'school_info');
+
+  if app_tables > 0 then
+    raise notice '000 skipped: public schema already holds Worker tables (initialized)';
+    return;
+  end if;
+
   for r in
     select tablename
     from pg_tables

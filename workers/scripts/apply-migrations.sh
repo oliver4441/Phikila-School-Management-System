@@ -33,7 +33,27 @@ echo "==> Using migrations directory: ${MIGRATIONS_DIR}"
 # Ensure the tracking table exists.
 echo "==> Ensuring _migrations tracking table exists..."
 psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -c \
-  "CREATE TABLE IF NOT EXISTS _migrations (name text primary key, applied_at timestamptz not null default now());"
+  "CREATE SCHEMA IF NOT EXISTS migration_ctl;" \
+  -c \
+  "CREATE TABLE IF NOT EXISTS migration_ctl._migrations (name text primary key, applied_at timestamptz not null default now());"
+
+# SAFETY: refuse to run against a database whose schema is already initialized
+# but has no migration history (i.e. migrations were applied manually before the
+# runner existed). Running file 000 against such a database would DROP the whole
+# public schema. If you truly want a fresh start, drop the schema yourself first.
+initialized="$(psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -tAc \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('users', 'school_info');")" || initialized="?"
+history="$(psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -tAc \
+  "SELECT count(*) FROM migration_ctl._migrations;")" || history="?"
+
+if [[ "${initialized}" != "0" && "${history}" == "0" ]]; then
+  echo "ERROR: Refusing to run migrations." >&2
+  echo "The public schema already contains application tables but there is no" >&2
+  echo "migration history in migration_ctl._migrations. Applying 000 would wipe" >&2
+  echo "all data. Import existing state into the tracking table or reset the" >&2
+  echo "database intentionally, then re-run." >&2
+  exit 1
+fi
 
 # Iterate over migration files in sorted (lexical) order.
 shopt -s nullglob
@@ -53,7 +73,7 @@ for file in $(printf '%s\n' "${files[@]}" | sort); do
   name="$(basename "${file}")"
 
   already="$(psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -tAc \
-    "SELECT 1 FROM _migrations WHERE name = '${name}';" || true)"
+    "SELECT 1 FROM migration_ctl._migrations WHERE name = '${name}';" || true)"
 
   if [[ "${already}" == "1" ]]; then
     echo "==> SKIP (already applied): ${name}"
@@ -64,7 +84,7 @@ for file in $(printf '%s\n' "${files[@]}" | sort); do
   echo "==> APPLY: ${name}"
   psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "${file}"
   psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -c \
-    "INSERT INTO _migrations (name) VALUES ('${name}');"
+    "INSERT INTO migration_ctl._migrations (name) VALUES ('${name}');"
   echo "==> DONE: ${name}"
   applied=$((applied + 1))
 done
